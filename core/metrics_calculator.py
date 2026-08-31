@@ -6,7 +6,12 @@ Calculates hourly, daily, monthly, and yearly view averages based on publish dat
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional, Union
 
-def calculate_video_metrics(view_count: int, upload_date: Optional[Union[str, datetime]] = None, timestamp: Optional[int] = None) -> Dict[str, Any]:
+def calculate_video_metrics(
+    view_count: int,
+    upload_date: Optional[Union[str, datetime]] = None,
+    timestamp: Optional[int] = None,
+    published_text: Optional[str] = None
+) -> Dict[str, Any]:
     """
     Calculate performance metrics for a YouTube video:
     - Hourly average views (Views/hora)
@@ -41,7 +46,7 @@ def calculate_video_metrics(view_count: int, upload_date: Optional[Union[str, da
 
     if not pub_dt:
         days_active = 30.0
-        date_str = "Desconhecida"
+        date_str = published_text.strip().capitalize() if published_text else "Recente"
     else:
         diff = (now - pub_dt).total_seconds() / 86400.0
         days_active = max(0.04, diff) # At least 1 hour (0.04 days)

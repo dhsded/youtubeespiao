@@ -365,11 +365,12 @@ class YouTubeCrawler:
                 except Exception as e:
                     logger.debug(f"Related videos fetch error: {e}")
 
-            # Calculate views metrics (hourly, daily, monthly, yearly)
+            # Calculate views metrics (hourly, daily, monthly, yearly, publish date)
             metrics = calculate_video_metrics(
                 view_count=view_count,
                 upload_date=deep_info["upload_date"],
-                timestamp=deep_info["timestamp"]
+                timestamp=deep_info["timestamp"],
+                published_text=v_item.get("published_text")
             )
 
             # Extract domains and Instagrams from Pinned Comment, Description, and other Comments
