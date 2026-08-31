@@ -1,9 +1,11 @@
 """
 Hunter Panel (Painel Espião) - Core mining, domain & Instagram analysis interface.
 Features:
+- Live Video Streaming Signal to Integrated Chromium Browser.
+- Recursive Related Videos Search (Niche cluster discovery).
 - Prioritization by View Count (Vídeos Mais Vistos).
 - Robust Language Verification (Zero foreign leakage on universal acronyms like GTA).
-- Real-time Telemetry HUD: Elapsed Time Counter (decrescido/decorrido), Average speed per video, Estimated time remaining.
+- Real-time Telemetry HUD: Elapsed Time, Average speed per video, Estimated time remaining.
 - Turbo Ultra-Fast Mode vs Safe Anti-Ban Mode.
 - Date & Year Range Filters (Global, Specific Years, Year Ranges, Recents).
 - Clean Dark/Light theme adaptability.
@@ -29,9 +31,10 @@ from ui.video_table_model import VideoTableView, DomainTableView
 from ui.settings_tab import APP_SETTINGS
 
 class CrawlerThread(QThread):
-    """Background worker thread supporting Multi-Language, Date Filters, Turbo Mode & Telemetry."""
+    """Background worker thread supporting Multi-Language, Live Browser Signals, Date Filters & Related Videos."""
     video_found = pyqtSignal(dict)
     domain_found = pyqtSignal(dict)
+    live_video_analyzed = pyqtSignal(str, str)
     progress_updated = pyqtSignal(int, int, str)
     finished_crawl = pyqtSignal(dict)
     error_occurred = pyqtSignal(str)
@@ -45,6 +48,7 @@ class CrawlerThread(QThread):
         max_videos: int,
         sort_by: str = "view_count",
         fast_mode: bool = True,
+        include_related: bool = True,
         loop_24h: bool = False,
         parent=None
     ):
@@ -56,6 +60,7 @@ class CrawlerThread(QThread):
         self.max_videos = max_videos
         self.sort_by = sort_by
         self.fast_mode = fast_mode
+        self.include_related = include_related
         self.loop_24h = loop_24h
         self.crawler = YouTubeCrawler(
             proxy_url=APP_SETTINGS.get("proxy_url"),
@@ -124,9 +129,11 @@ class CrawlerThread(QThread):
                             sort_by=self.sort_by,
                             date_filter=self.date_filter,
                             year_range=self.year_range,
+                            include_related=self.include_related,
                             hl=hl,
                             gl=gl,
                             display_label=f"{flag} {lang_name}",
+                            on_live_video=lambda u, t: self.live_video_analyzed.emit(u, t),
                             on_video_processed=lambda v: self.video_found.emit(v),
                             on_domain_found=lambda d: self.domain_found.emit(d),
                             on_progress=on_prog_wrapped
@@ -164,8 +171,10 @@ class CrawlerThread(QThread):
 
 
 class HunterTab(QWidget):
-    """Main Hunting Dashboard with Multi-Language, Telemetry & Fast Search Mode."""
+    """Main Hunting Dashboard with Multi-Language, Telemetry, Live Browser Signals & Related Videos."""
     navigate_url_requested = pyqtSignal(str)
+    live_video_stream = pyqtSignal(str, str)
+    switch_to_browser_tab = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -372,11 +381,11 @@ class HunterTab(QWidget):
 
         panel_layout.addLayout(row1)
 
-        # Row 2: Limits, Checkboxes, Action Buttons
+        # Row 2: Limits, Checkboxes, Action Buttons & Live Browser Shortcut
         row2 = QHBoxLayout()
-        row2.setSpacing(10)
+        row2.setSpacing(8)
 
-        lbl_lim = QLabel("Limite de Vídeos:")
+        lbl_lim = QLabel("Limite:")
         lbl_lim.setStyleSheet("font-weight: 600;")
         row2.addWidget(lbl_lim)
 
@@ -385,24 +394,29 @@ class HunterTab(QWidget):
         self.spin_max.setValue(50)
         self.spin_max.setSingleStep(25)
         self.spin_max.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.spin_max.setFixedWidth(90)
+        self.spin_max.setFixedWidth(85)
         row2.addWidget(self.spin_max)
 
-        self.chk_unlimited = QCheckBox("♾️ Máximo")
+        self.chk_unlimited = QCheckBox("♾️ Máx")
         self.chk_unlimited.setToolTip("Busca o maior número possível de vídeos retornados.")
         self.chk_unlimited.toggled.connect(lambda checked: self.spin_max.setEnabled(not checked))
         row2.addWidget(self.chk_unlimited)
 
-        self.chk_fast_mode = QCheckBox("⚡ Modo Turbo")
+        self.chk_fast_mode = QCheckBox("⚡ Turbo")
         self.chk_fast_mode.setChecked(True)
         self.chk_fast_mode.setToolTip("Mineração ultra-rápida de vídeos (~0.4s por vídeo).")
         row2.addWidget(self.chk_fast_mode)
 
-        self.chk_mode_24h = QCheckBox("🔄 Modo 24h")
+        self.chk_include_related = QCheckBox("🔗 Relacionados")
+        self.chk_include_related.setChecked(True)
+        self.chk_include_related.setToolTip("Aprofunda a busca capturando vídeos relacionados no mesmo nicho e idioma.")
+        row2.addWidget(self.chk_include_related)
+
+        self.chk_mode_24h = QCheckBox("🔄 24h")
         self.chk_mode_24h.setToolTip("Executa em ciclos contínuos com pausas seguras anti-bloqueio.")
         row2.addWidget(self.chk_mode_24h)
 
-        row2.addSpacing(15)
+        row2.addSpacing(10)
 
         # 1. INICIAR BUTTON
         self.btn_start = QPushButton("🚀 Iniciar Busca")
@@ -426,6 +440,14 @@ class HunterTab(QWidget):
         self.btn_stop.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.btn_stop.clicked.connect(self._on_stop_completely)
         row2.addWidget(self.btn_stop)
+
+        # 4. VIEW IN BROWSER BUTTON
+        self.btn_view_live = QPushButton("🌐 Ver no Navegador")
+        self.btn_view_live.setObjectName("btn_table_action")
+        self.btn_view_live.setToolTip("Alternar para a aba do Navegador Web Integrado para assistir a análise ao vivo.")
+        self.btn_view_live.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.btn_view_live.clicked.connect(lambda: self.switch_to_browser_tab.emit())
+        row2.addWidget(self.btn_view_live)
 
         row2.addStretch()
         panel_layout.addLayout(row2)
@@ -521,6 +543,7 @@ class HunterTab(QWidget):
         max_vids = 5000 if self.chk_unlimited.isChecked() else self.spin_max.value()
         sort_by = self.combo_sort.currentData()
         fast_mode = self.chk_fast_mode.isChecked()
+        include_related = self.chk_include_related.isChecked()
         loop_24h = self.chk_mode_24h.isChecked()
 
         self.is_paused = False
@@ -534,8 +557,8 @@ class HunterTab(QWidget):
         self.btn_pause.setText("⏸️ Pausar")
         self.btn_stop.setEnabled(True)
         self.progress_bar.setValue(0)
-        self.status_label.setText(f"Minerando vídeos mais vistos em {self.combo_lang.currentText()} (Turbo: {fast_mode})...")
-        self._append_log(f"--- 🚀 Mineração Iniciada ({len(keywords)} termos | Idioma: {self.combo_lang.currentText()} | Turbo: {fast_mode}) ---")
+        self.status_label.setText(f"Minerando vídeos mais vistos em {self.combo_lang.currentText()} (Turbo: {fast_mode}, Relacionados: {include_related})...")
+        self._append_log(f"--- 🚀 Mineração Iniciada ({len(keywords)} termos | Idioma: {self.combo_lang.currentText()} | Turbo: {fast_mode} | Relacionados: {include_related}) ---")
 
         self.crawler_thread = CrawlerThread(
             keywords=keywords,
@@ -545,15 +568,20 @@ class HunterTab(QWidget):
             max_videos=max_vids,
             sort_by=sort_by,
             fast_mode=fast_mode,
+            include_related=include_related,
             loop_24h=loop_24h,
             parent=self
         )
+        self.crawler_thread.live_video_analyzed.connect(self._on_live_video_analyzed)
         self.crawler_thread.video_found.connect(self._on_video_found)
         self.crawler_thread.domain_found.connect(self._on_domain_found)
         self.crawler_thread.progress_updated.connect(self._on_progress_updated)
         self.crawler_thread.finished_crawl.connect(self._on_finished_crawl)
         self.crawler_thread.error_occurred.connect(self._on_error_occurred)
         self.crawler_thread.start()
+
+    def _on_live_video_analyzed(self, url: str, title: str):
+        self.live_video_stream.emit(url, title)
 
     def _on_toggle_pause(self):
         if not self.crawler_thread or not self.crawler_thread.isRunning():

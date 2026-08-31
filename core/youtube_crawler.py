@@ -1,7 +1,9 @@
 """
-YouTube Crawler and Harvester (24/7 Multi-Language, Turbo Mode & Robust Language Filtering).
+YouTube Crawler and Harvester (24/7 Multi-Language, Live Telemetry & Recursive Related Videos Engine).
 Features:
 - Primary sorting by Views Count (Vídeos Mais Vistos).
+- Live Real-Time Video Signal for Embedded Chromium Browser.
+- Recursive Related Videos Search (Busca em Vídeos Relacionados dentro do mesmo nicho/idioma).
 - Robust Language Verification: Filters out foreign videos when a specific language (e.g. Portuguese) is chosen.
 - Turbo Search Mode (Ultra-Fast 0.3s processing) vs Safe Anti-Ban Mode.
 - Date Filtering: Global/All-Time, Specific Years, Year Ranges, and YouTube intervals.
@@ -236,15 +238,17 @@ class YouTubeCrawler:
         date_filter: str = "all_time",
         custom_year: Optional[int] = None,
         year_range: Optional[tuple] = None,
+        include_related: bool = True,
         hl: str = "pt",
         gl: str = "BR",
         display_label: str = "",
+        on_live_video: Optional[Callable[[str, str], None]] = None,
         on_video_processed: Optional[Callable[[Dict[str, Any]], None]] = None,
         on_domain_found: Optional[Callable[[Dict[str, Any]], None]] = None,
         on_progress: Optional[Callable[[int, int, str], None]] = None
     ) -> Dict[str, Any]:
         """
-        Processes a keyword prioritized by views with robust language validation.
+        Processes a keyword prioritized by views with real-time browser signals and related video expansion.
         """
         self._is_stopped = False
         
@@ -289,23 +293,29 @@ class YouTubeCrawler:
                 gl=gl
             )
 
-        total_found = len(initial_videos)
         scanned_videos = []
         all_domains = []
+        processed_index = 0
 
-        for idx, v_item in enumerate(initial_videos):
+        while initial_videos and len(scanned_videos) < max_videos:
             if self._is_stopped:
                 break
 
+            v_item = initial_videos.pop(0)
             vid_id = v_item.get("id")
-            if vid_id and vid_id in self.seen_video_ids:
+            if not vid_id or vid_id in self.seen_video_ids:
                 continue
-            if vid_id:
-                self.seen_video_ids.add(vid_id)
+            self.seen_video_ids.add(vid_id)
 
-            current_num = idx + 1
+            processed_index += 1
+            current_total = max(len(scanned_videos) + len(initial_videos) + 1, max_videos)
+
             if on_progress:
-                on_progress(current_num, total_found, f"{target_info}Analisando vídeo {current_num}/{total_found}: {v_item['title'][:32]}...")
+                on_progress(len(scanned_videos) + 1, max_videos, f"{target_info}Analisando [{len(scanned_videos)+1}/{max_videos}]: {v_item['title'][:35]}...")
+
+            # Emit Live Real-time Video Signal for Browser
+            if on_live_video:
+                on_live_video(v_item["url"], v_item["title"])
 
             self._sleep_jitter()
 
@@ -332,6 +342,23 @@ class YouTubeCrawler:
                 ):
                     # Video has no context in target language, skip
                     continue
+
+            # Recursive Related Videos Harvest: Discover related videos in the exact niche cluster
+            if include_related and len(scanned_videos) + len(initial_videos) < max_videos * 2:
+                try:
+                    rel_query = f"{title[:45]}"
+                    rel_vids = self.search_videos(
+                        keyword=rel_query,
+                        max_results=3,
+                        sort_by="view_count",
+                        hl=hl,
+                        gl=gl
+                    )
+                    for r_vid in rel_vids:
+                        if r_vid.get("id") and r_vid["id"] not in self.seen_video_ids:
+                            initial_videos.append(r_vid)
+                except Exception as e:
+                    logger.debug(f"Related videos fetch error: {e}")
 
             # Calculate views metrics (hourly, daily, monthly, yearly)
             metrics = calculate_video_metrics(

@@ -72,6 +72,8 @@ class MainWindow(QMainWindow):
         # Tab 1: Hunter Tab
         self.hunter_tab = HunterTab()
         self.hunter_tab.navigate_url_requested.connect(self._on_navigate_to_browser)
+        self.hunter_tab.live_video_stream.connect(self._on_live_video_stream)
+        self.hunter_tab.switch_to_browser_tab.connect(lambda: self.main_tabs.setCurrentIndex(1))
         self.main_tabs.addTab(self.hunter_tab, "🎯 Painel Espião & Mineração")
 
         # Tab 2: Integrated Web Browser (Chromium)
@@ -106,3 +108,7 @@ class MainWindow(QMainWindow):
         """Navigate to URL in embedded browser and switch to Browser tab."""
         self.browser_view.navigate_to(url)
         self.main_tabs.setCurrentIndex(1)
+
+    def _on_live_video_stream(self, url: str, title: str):
+        """Update live video feed in embedded browser in real-time."""
+        self.browser_view.set_live_video(url, title)
