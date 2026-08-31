@@ -30,6 +30,7 @@ from core.youtube_crawler import YouTubeCrawler
 from core.translator import get_language_list, expand_queries_for_language
 from core.metrics_calculator import format_number
 from core.exporter import DataExporter
+from core.autosave_manager import AutoSaveManager
 from ui.video_table_model import VideoTableView, DomainTableView
 from ui.settings_tab import APP_SETTINGS
 
@@ -210,7 +211,7 @@ class CrawlerThread(QThread):
 class HunterTab(QWidget):
     """Main Hunting Dashboard supporting Keywords, Channel Lists, Telemetry, Live Browser & Related Videos."""
     navigate_url_requested = pyqtSignal(str)
-    live_video_stream = pyqtSignal(str, str)
+    live_video_stream = pyqtSignal(str, str, object)
     switch_to_browser_tab = pyqtSignal()
 
     def __init__(self, parent=None):
@@ -221,6 +222,13 @@ class HunterTab(QWidget):
         self.all_videos: List[Dict[str, Any]] = []
         self.all_domains: List[Dict[str, Any]] = []
 
+        # Auto-Save & Crash Recovery Manager
+        self.autosave_manager = AutoSaveManager()
+        self.autosave_timer = QTimer(self)
+        self.autosave_timer.setInterval(30000) # Save every 30 seconds
+        self.autosave_timer.timeout.connect(self._trigger_autosave)
+        self.autosave_timer.start()
+
         # Telemetry State
         self.start_time: float = 0.0
         self.target_video_count: int = 50
@@ -229,6 +237,7 @@ class HunterTab(QWidget):
         self.telemetry_timer.timeout.connect(self._update_telemetry)
 
         self._init_ui()
+        self._restore_previous_session_if_any()
 
     def _init_ui(self):
         main_layout = QVBoxLayout(self)
@@ -701,6 +710,9 @@ class HunterTab(QWidget):
         self.video_table.set_videos(self.all_videos)
         self._update_stat_cards()
         self._append_log(f"📹 Vídeo minerado: {video_dict['title'][:45]}... ({video_dict['metrics']['view_count_formatted']} views)")
+        self.live_video_stream.emit(video_dict.get("url", ""), video_dict.get("title", ""), video_dict)
+        if len(self.all_videos) % 5 == 0:
+            self._trigger_autosave()
 
     def _on_domain_found(self, domain_dict: Dict[str, Any]):
         d_root = domain_dict.get("root_domain")
@@ -714,6 +726,29 @@ class HunterTab(QWidget):
         status = domain_dict.get("status", "")
         name = domain_dict.get("display_name") or domain_dict.get("root_domain", "")
         self._append_log(f"  {badge} {name} -> {status} ({domain_dict.get('source_location')})")
+        self._trigger_autosave()
+
+    def _trigger_autosave(self):
+        """Perform automatic atomic session save to disk and emergency backup in Downloads."""
+        if self.all_videos or self.all_domains:
+            kws = [k.strip() for k in self.txt_keywords.toPlainText().splitlines() if k.strip()]
+            self.autosave_manager.save_session(self.all_videos, self.all_domains, kws)
+
+    def _restore_previous_session_if_any(self):
+        """Automatically restore previously mined data if an autosave session exists."""
+        if self.autosave_manager.has_saved_session():
+            saved = self.autosave_manager.load_saved_session()
+            if saved and (saved.get("videos") or saved.get("domains")):
+                vids = saved.get("videos", [])
+                doms = saved.get("domains", [])
+                time_saved = saved.get("formatted_time", "anteriormente")
+
+                self.all_videos = vids
+                self.all_domains = doms
+                self.video_table.set_videos(self.all_videos)
+                self.domain_table.set_domains(self.all_domains)
+                self._update_stat_cards()
+                self._append_log(f"📂 Sessão anterior recuperada com sucesso ({len(vids)} vídeos, {len(doms)} domínios salvos em {time_saved}).")
 
     def _on_progress_updated(self, current: int, total: int, message: str):
         if total > 0:
@@ -729,6 +764,7 @@ class HunterTab(QWidget):
         self.is_paused = False
         self.telemetry_timer.stop()
         self.progress_bar.setValue(100)
+        self._trigger_autosave()
 
         elapsed = time.time() - self.start_time if self.start_time > 0 else 0
         mins, secs = divmod(int(elapsed), 60)
@@ -745,7 +781,8 @@ class HunterTab(QWidget):
             f"• Tempo total: {time_str} (Média: {avg_str})\n"
             f"• Vídeos analisados: {len(self.all_videos)}\n"
             f"• Domínios / Contas IG encontradas: {len(self.all_domains)}\n"
-            f"• Oportunidades DISPONÍVEIS para compra/claim: {summary.get('available_domains', 0)}"
+            f"• Oportunidades DISPONÍVEIS para compra/claim: {summary.get('available_domains', 0)}\n\n"
+            f"💾 Cópia de segurança auto-salva na pasta Downloads."
         )
 
     def _on_error_occurred(self, err_msg: str):
@@ -801,7 +838,8 @@ class HunterTab(QWidget):
         self.progress_bar.setValue(0)
         self.lbl_telemetry.setText("⏱️ Tempo: 00:00  •  ⚡ Média: -- s/vídeo  •  ⏳ Restante: --")
         self._update_stat_cards()
-        self.status_label.setText("Resultados limpos.")
+        self.autosave_manager.clear_saved_session()
+        self.status_label.setText("Resultados limpos e sessão anterior resetada.")
 
     def _export_pdf(self):
         if not self.all_videos and not self.all_domains:

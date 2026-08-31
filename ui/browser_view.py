@@ -1,7 +1,7 @@
 """
 Integrated Chromium Web Browser & Anti-Flicker Live Mining Monitor.
 Features:
-- Anti-Flicker Live Mining Monitor (Zero Visual Flickering, Zero Page Reloads during crawler operation).
+- Anti-Flicker Live Mining Monitor with Rich Video Intelligence (Channel, Upload Date, 90-Day Views, VPH, Daily Pace, and Extracted Domains).
 - Multi-Instance Support: Isolated per-process Chromium storage profiles allowing infinite simultaneous windows.
 - Dual View Modes: '📺 Monitor Anti-Flicker HD' (live stream feed without browser reload) vs '🌐 Navegador Web Livre' (full Chromium engine).
 - High-DPI Zoom Controls (🔍+, 🔍-, Reset).
@@ -12,9 +12,9 @@ Features:
 import os
 import re
 import tempfile
-from typing import Optional, Dict
+from typing import Optional, Dict, Any
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLineEdit,
+    QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLineEdit,
     QPushButton, QProgressBar, QLabel, QFrame, QCheckBox,
     QStackedWidget, QSizePolicy
 )
@@ -27,7 +27,7 @@ from PyQt6.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkRepl
 from ui.video_table_model import AsyncThumbnailLabel
 
 class LiveMonitorCard(QWidget):
-    """Zero-flicker native HUD card displaying real-time video mining stream."""
+    """Zero-flicker native HUD card displaying real-time video mining stream with rich intelligence."""
     play_in_browser_requested = pyqtSignal(str)
     open_external_requested = pyqtSignal(str)
 
@@ -39,7 +39,7 @@ class LiveMonitorCard(QWidget):
 
     def _init_ui(self):
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setContentsMargins(16, 16, 16, 16)
         layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         # Center Card Container
@@ -50,16 +50,16 @@ class LiveMonitorCard(QWidget):
                 background-color: #131B2A;
                 border: 1px solid #222F44;
                 border-radius: 12px;
-                padding: 16px;
+                padding: 14px;
             }
         """)
-        self.card.setFixedWidth(680)
+        self.card.setFixedWidth(720)
 
         card_layout = QVBoxLayout(self.card)
-        card_layout.setContentsMargins(16, 16, 16, 16)
-        card_layout.setSpacing(12)
+        card_layout.setContentsMargins(14, 14, 14, 14)
+        card_layout.setSpacing(10)
 
-        # Top Badge & HUD Header
+        # 1. Top Badge & HUD Header
         header_layout = QHBoxLayout()
         self.badge_live = QLabel("🔴 MINERANDO AO VIVO")
         self.badge_live.setStyleSheet("""
@@ -73,31 +73,81 @@ class LiveMonitorCard(QWidget):
         """)
         header_layout.addWidget(self.badge_live)
 
-        self.lbl_status = QLabel("Acompanhando fluxo de extração em tempo real...")
+        self.lbl_status = QLabel("Acompanhando fluxo de extração e análise de tráfego...")
         self.lbl_status.setStyleSheet("color: #94A3B8; font-size: 11px; font-weight: 600;")
         header_layout.addWidget(self.lbl_status, 1)
 
         card_layout.addLayout(header_layout)
 
-        # Large HD Thumbnail Preview (480x270 16:9)
+        # 2. Large HD Thumbnail Preview (480x270 16:9)
         thumb_container = QHBoxLayout()
         thumb_container.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.thumb_label = AsyncThumbnailLabel("", width=480, height=270)
+        self.thumb_label = AsyncThumbnailLabel("", width=440, height=247)
         self.thumb_label.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.thumb_label.mousePressEvent = lambda e: self.play_in_browser_requested.emit(self.current_url)
         thumb_container.addWidget(self.thumb_label)
         card_layout.addLayout(thumb_container)
 
-        # Video Title
+        # 3. Video Title
         self.lbl_title = QLabel(self.current_title)
         self.lbl_title.setObjectName("live_monitor_title")
         self.lbl_title.setWordWrap(True)
         self.lbl_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.lbl_title.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
-        self.lbl_title.setStyleSheet("color: #38BDF8; margin-top: 4px;")
+        self.lbl_title.setStyleSheet("color: #38BDF8; margin-top: 2px;")
         card_layout.addWidget(self.lbl_title)
 
-        # Action Buttons
+        # 4. Rich Video Details Matrix
+        self.stats_frame = QFrame()
+        self.stats_frame.setStyleSheet("""
+            QFrame {
+                background-color: #0F172A;
+                border: 1px solid #1E293B;
+                border-radius: 8px;
+                padding: 6px;
+            }
+        """)
+        stats_grid = QGridLayout(self.stats_frame)
+        stats_grid.setContentsMargins(10, 8, 10, 8)
+        stats_grid.setHorizontalSpacing(14)
+        stats_grid.setVerticalSpacing(6)
+
+        # Col 0: Channel & Upload Date
+        self.lbl_channel = QLabel("📺 Canal: --")
+        self.lbl_channel.setStyleSheet("color: #E2E8F0; font-size: 11px; font-weight: 700;")
+        stats_grid.addWidget(self.lbl_channel, 0, 0)
+
+        self.lbl_pubdate = QLabel("📅 Envio: --")
+        self.lbl_pubdate.setStyleSheet("color: #94A3B8; font-size: 11px;")
+        stats_grid.addWidget(self.lbl_pubdate, 1, 0)
+
+        # Col 1: Total Views & 90-Day Views
+        self.lbl_views_tot = QLabel("👁️ Total Views: --")
+        self.lbl_views_tot.setStyleSheet("color: #38BDF8; font-size: 11px; font-weight: 700;")
+        stats_grid.addWidget(self.lbl_views_tot, 0, 1)
+
+        self.lbl_views_90d = QLabel("⚡ Views 90d: --")
+        self.lbl_views_90d.setStyleSheet("color: #8B5CF6; font-size: 11px; font-weight: 700;")
+        stats_grid.addWidget(self.lbl_views_90d, 1, 1)
+
+        # Col 2: VPH Velocity & Daily Traffic
+        self.lbl_vph = QLabel("⏱️ VPH: --")
+        self.lbl_vph.setStyleSheet("color: #F59E0B; font-size: 11px; font-weight: 800;")
+        stats_grid.addWidget(self.lbl_vph, 0, 2)
+
+        self.lbl_daily = QLabel("🔥 Tráfego: --")
+        self.lbl_daily.setStyleSheet("color: #10B981; font-size: 11px; font-weight: 800;")
+        stats_grid.addWidget(self.lbl_daily, 1, 2)
+
+        card_layout.addWidget(self.stats_frame)
+
+        # 5. Discovered Domains Badge Bar
+        self.lbl_domains_badge = QLabel("💎 Oportunidades: Nenhuma nesta varredura")
+        self.lbl_domains_badge.setStyleSheet("color: #CBD5E1; font-size: 11px; font-weight: 600; text-align: center;")
+        self.lbl_domains_badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        card_layout.addWidget(self.lbl_domains_badge)
+
+        # 6. Action Buttons
         btn_layout = QHBoxLayout()
         btn_layout.setSpacing(10)
         btn_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -110,7 +160,7 @@ class LiveMonitorCard(QWidget):
                 color: #FFFFFF;
                 font-weight: 800;
                 font-size: 12px;
-                padding: 8px 16px;
+                padding: 7px 16px;
                 border-radius: 6px;
             }
             QPushButton#btn_monitor_play:hover {
@@ -130,7 +180,7 @@ class LiveMonitorCard(QWidget):
                 border: 1px solid #334155;
                 font-weight: 700;
                 font-size: 12px;
-                padding: 8px 16px;
+                padding: 7px 16px;
                 border-radius: 6px;
             }
             QPushButton#btn_monitor_ext:hover {
@@ -145,8 +195,8 @@ class LiveMonitorCard(QWidget):
         card_layout.addLayout(btn_layout)
         layout.addWidget(self.card)
 
-    def update_video(self, url: str, title: str):
-        """Update live video feed with smooth thumbnail transition and zero flickering."""
+    def update_video(self, url: str, title: str, video_data: Optional[Dict[str, Any]] = None):
+        """Update live video feed with rich stats and smooth thumbnail transition."""
         self.current_url = url
         self.current_title = title
         self.lbl_title.setText(title)
@@ -157,6 +207,43 @@ class LiveMonitorCard(QWidget):
             thumb_url = f"https://i.ytimg.com/vi/{vid_id}/hqdefault.jpg"
         else:
             thumb_url = ""
+
+        # Update metadata if available
+        if video_data:
+            m = video_data.get("metrics", {})
+            channel = video_data.get("channel_name", "Canal do YouTube")
+            pub_date = m.get("publish_date", "Recente")
+            v_tot = m.get("view_count_formatted", "0")
+            v_90d = m.get("views_90d_formatted", "0")
+            vph_val = m.get("hourly_views_formatted", "0 VPH")
+            daily_val = m.get("daily_views_formatted", "0/dia")
+
+            self.lbl_channel.setText(f"📺 Canal: {channel[:25]}")
+            self.lbl_pubdate.setText(f"📅 Envio: {pub_date}")
+            self.lbl_views_tot.setText(f"👁️ Views: {v_tot}")
+            self.lbl_views_90d.setText(f"⚡ 90 Dias: {v_90d}")
+            self.lbl_vph.setText(f"⏱️ {vph_val}")
+            self.lbl_daily.setText(f"🔥 {daily_val}")
+
+            doms = video_data.get("domains", [])
+            avail_cnt = sum(1 for d in doms if d.get("status") == "Disponível")
+            if avail_cnt > 0:
+                self.lbl_domains_badge.setText(f"💎 Oportunidades: 🟢 {avail_cnt} DISPONÍVEIS p/ Registro | Total: {len(doms)}")
+                self.lbl_domains_badge.setStyleSheet("color: #10B981; font-size: 11px; font-weight: 800;")
+            elif len(doms) > 0:
+                self.lbl_domains_badge.setText(f"💎 Oportunidades: {len(doms)} links analisados (Registrados/Inativos)")
+                self.lbl_domains_badge.setStyleSheet("color: #CBD5E1; font-size: 11px; font-weight: 600;")
+            else:
+                self.lbl_domains_badge.setText("💎 Oportunidades: Nenhum link expirado neste vídeo")
+                self.lbl_domains_badge.setStyleSheet("color: #64748B; font-size: 11px; font-weight: 600;")
+        else:
+            self.lbl_channel.setText("📺 Canal: YouTube")
+            self.lbl_pubdate.setText("📅 Envio: Recente")
+            self.lbl_views_tot.setText("👁️ Views: Analisando...")
+            self.lbl_views_90d.setText("⚡ 90 Dias: --")
+            self.lbl_vph.setText("⏱️ VPH: --")
+            self.lbl_daily.setText("🔥 Tráfego: --")
+            self.lbl_domains_badge.setText("💎 Oportunidades: Analisando links na descrição...")
 
         # Re-fetch thumbnail smoothly without DOM teardowns
         self.thumb_label.url = thumb_url
@@ -174,7 +261,7 @@ class LiveMonitorCard(QWidget):
             pixmap = QPixmap()
             if pixmap.loadFromData(data):
                 scaled = pixmap.scaled(
-                    480, 270,
+                    440, 247,
                     Qt.AspectRatioMode.KeepAspectRatioByExpanding,
                     Qt.TransformationMode.SmoothTransformation
                 )
@@ -443,9 +530,9 @@ class BrowserView(QWidget):
         self.web_view.setZoomFactor(self.zoom_factor)
         self.btn_zoom_reset.setText(f"{int(self.zoom_factor * 100)}%")
 
-    def set_live_video(self, url: str, title: str):
+    def set_live_video(self, url: str, title: str, video_data: Optional[Dict[str, Any]] = None):
         """
-        Update live status and stream monitor with ZERO visual flickering and NO page reloads.
+        Update live status and stream monitor with rich video intelligence and ZERO visual flickering.
         """
         if not self.follow_live_stream:
             return
@@ -456,8 +543,8 @@ class BrowserView(QWidget):
         self.current_raw_url = url
         self.url_bar.setText(url)
 
-        # Update native Anti-Flicker Monitor Card smoothly
-        self.live_monitor.update_video(url, title)
+        # Update native Anti-Flicker Monitor Card smoothly with rich stats
+        self.live_monitor.update_video(url, title, video_data)
 
     def navigate_to(self, url: str):
         """Navigate to specified URL, automatically prepending protocol if missing."""

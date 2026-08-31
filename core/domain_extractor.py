@@ -1,6 +1,7 @@
 """
 Domain Extractor and Recursive URL Unshortener.
 Identifies URLs and Instagram handles in descriptions and pinned comments,
+strictly enforces clickable links (discards non-clickable plain text),
 expands all layers of redirects/shortlinks/bridges, and filters out known infrastructure and social platforms.
 """
 
@@ -59,8 +60,18 @@ IGNORE_DOMAINS = {
 # Combine all infrastructure to exclude from candidate domains
 ALL_EXCLUDED_DOMAINS = IGNORE_DOMAINS.union(SHORTENER_DOMAINS)
 
-URL_REGEX = re.compile(
-    r'(?:https?:\/\/)?(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}(?:\/[^\s\)\"\'<>,;]*)*',
+# Discard non-web extensions (e.g. filename mentions in text)
+NON_WEB_EXTENSIONS = {
+    "png", "jpg", "jpeg", "gif", "svg", "webp", "mp4", "mp3", "mov", "avi",
+    "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "zip", "rar", "7z",
+    "exe", "dmg", "apk", "iso", "tar", "gz", "txt", "csv", "json", "xml"
+}
+
+# Match explicit clickable links in text (http://, https://, www., or structured domain links with subpaths)
+URL_CLICKABLE_REGEX = re.compile(
+    r'(?:https?:\/\/|www\.)[a-zA-Z0-9][-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{2,12}\b(?:[-a-zA-Z0-9()@:%_\+.~#?&//=]*)'
+    r'|'
+    r'\b[a-zA-Z0-9][-a-zA-Z0-9]{1,62}\.[a-zA-Z]{2,12}\/(?:[-a-zA-Z0-9()@:%_\+.~#?&//=]+)',
     re.IGNORECASE
 )
 
@@ -77,21 +88,34 @@ class DomainExtractor:
         self.instagram_validator = InstagramValidator(timeout=request_timeout)
 
     def extract_urls(self, text: str) -> List[str]:
-        """Find all URL patterns in a block of text."""
+        """
+        Find all genuine CLICKABLE URL patterns in a block of text.
+        Discards plain text mentions, email addresses, and non-clickable strings.
+        """
         if not text:
             return []
         
-        matches = URL_REGEX.findall(text)
+        matches = URL_CLICKABLE_REGEX.findall(text)
         cleaned_urls = []
         
         for match in matches:
             url = match.strip().rstrip(".,:;!?'\")]}")
             if not url:
                 continue
+            
+            # Reject email addresses
+            if "@" in url and not url.startswith("http"):
+                continue
+            
+            # Reject non-web file mentions (e.g. 'arquivo.pdf')
+            parts = url.split("?")[0].split("/")
+            last_token = parts[0].split(".")[-1].lower() if parts else ""
+            if len(parts) == 1 and last_token in NON_WEB_EXTENSIONS:
+                continue
+
             if not url.startswith("http://") and not url.startswith("https://"):
-                if "@" in url:
-                    continue
                 url = "https://" + url
+                
             cleaned_urls.append(url)
             
         return list(dict.fromkeys(cleaned_urls))
@@ -118,35 +142,51 @@ class DomainExtractor:
 
         while hops < max_hops:
             hops += 1
-            domain = self.get_registered_domain(current_url)
-            
-            # If not a shortener or bridge, we might still check 1 hop
             try:
-                resp = self.session.get(
-                    current_url,
-                    allow_redirects=True,
-                    timeout=self.timeout,
-                    headers={"Accept": "text/html,application/xhtml+xml"}
-                )
-                
-                final_url = resp.url
-                
-                # Check for HTML Meta Refresh (e.g., <meta http-equiv="refresh" content="0;url=...">)
-                if resp.status_code == 200 and "html" in resp.headers.get("Content-Type", ""):
-                    soup = BeautifulSoup(resp.text[:4096], "html.parser")
-                    meta_refresh = soup.find("meta", attrs={"http-equiv": re.compile(r"^refresh$", re.I)})
-                    if meta_refresh and meta_refresh.get("content"):
-                        content = meta_refresh["content"]
-                        match = re.search(r'url=([^;]+)', content, re.I)
-                        if match:
-                            target = match.group(1).strip().strip("'\"")
-                            if not target.startswith("http"):
-                                target = urllib.parse.urljoin(final_url, target)
-                            current_url = target
-                            continue
+                # First check TLD of current URL - if already a non-shortener destination, we can return or probe lightly
+                root = self.get_registered_domain(current_url)
+                if not root:
+                    break
 
-                self._unshortened_cache[url] = final_url
-                return final_url
+                # If current root is NOT a known shortener, perform single HEAD request
+                if root not in SHORTENER_DOMAINS:
+                    try:
+                        resp = self.session.head(current_url, allow_redirects=True, timeout=self.timeout)
+                        if resp.url and resp.url != current_url:
+                            current_url = resp.url
+                    except Exception:
+                        pass
+                    break
+
+                # For known shorteners, perform full GET to follow HTML meta refresh / JS redirects
+                resp = self.session.get(current_url, allow_redirects=True, timeout=self.timeout, stream=True)
+                if resp.url and resp.url != current_url:
+                    current_url = resp.url
+
+                # Check HTML body for client-side redirects (Meta refresh / window.location)
+                content_type = resp.headers.get("Content-Type", "")
+                if "text/html" in content_type:
+                    # Read only first 4KB to save bandwidth
+                    chunk = resp.raw.read(4096).decode('utf-8', errors='ignore')
+                    soup = BeautifulSoup(chunk, 'html.parser')
+                    
+                    # 1. Meta refresh
+                    meta_refresh = soup.find('meta', attrs={'http-equiv': re.compile(r'refresh', re.I)})
+                    if meta_refresh and meta_refresh.get('content'):
+                        content = meta_refresh['content']
+                        if 'url=' in content.lower():
+                            next_url = content.split('url=')[-1].split(';')[0].strip(' "\'')
+                            if next_url.startswith("http"):
+                                current_url = next_url
+                                continue
+
+                    # 2. JavaScript location.href or location.replace
+                    js_match = re.search(r'(?:window\.location(?:\.href|\.replace)?\s*=\s*[\'"]|location\.replace\([\'"])(https?://[^\'"]+)', chunk)
+                    if js_match:
+                        current_url = js_match.group(1)
+                        continue
+
+                break
 
             except Exception:
                 break
@@ -157,6 +197,7 @@ class DomainExtractor:
     def process_text_for_domains(self, text: str, source_location: str = "Descrição") -> List[Dict[str, Any]]:
         """
         Extract valid target domains and Instagram accounts from text.
+        Guarantees that only clickable web links and active handles are retained.
         """
         results = []
         seen_domains: Set[str] = set()
@@ -180,7 +221,7 @@ class DomainExtractor:
                 "registrar_name": "Instagram"
             })
 
-        # 2. Process Web Domains
+        # 2. Process Clickable Web Domains
         urls = self.extract_urls(text)
 
         for raw_url in urls:

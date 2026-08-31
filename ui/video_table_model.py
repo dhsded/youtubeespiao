@@ -20,7 +20,7 @@ from typing import List, Dict, Any, Optional
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTableWidget,
     QTableWidgetItem, QPushButton, QLabel, QComboBox,
-    QFrame, QHeaderView, QLineEdit, QCheckBox, QMenu
+    QFrame, QHeaderView, QLineEdit, QCheckBox, QMenu, QDialog
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QUrl, QPoint
 from PyQt6.QtGui import QColor, QFont, QCursor, QPixmap, QImage, QAction
@@ -423,10 +423,109 @@ class VideoTableView(QWidget):
         self.table.setSortingEnabled(True)
 
 
+class AssociatedVideosDialog(QDialog):
+    """Modal dialog displaying the full list of videos linking to a specific domain."""
+    def __init__(self, domain_name: str, associated_videos: List[Dict[str, Any]], parent=None):
+        super().__init__(parent)
+        self.domain_name = domain_name
+        self.associated_videos = associated_videos
+        self.setWindowTitle(f"🎯 Vídeos Associados: {domain_name} ({len(associated_videos)} vídeos)")
+        self.resize(920, 440)
+        self._init_ui()
+
+    def _init_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(12)
+
+        # Header Info Card
+        header_card = QFrame()
+        header_card.setStyleSheet("background-color: #1E293B; border-radius: 8px; padding: 8px 12px; border: 1px solid #334155;")
+        h_layout = QHBoxLayout(header_card)
+        h_layout.setContentsMargins(8, 4, 8, 4)
+
+        lbl_info = QLabel(f"💎 <b>Domínio / Conta:</b> <span style='color: #38BDF8; font-size: 13px;'>{self.domain_name}</span>  •  Encontrado em <b>{len(self.associated_videos)}</b> vídeos")
+        lbl_info.setStyleSheet("font-size: 12px; color: #F8FAFC;")
+        h_layout.addWidget(lbl_info)
+        h_layout.addStretch()
+
+        layout.addWidget(header_card)
+
+        # Table
+        table = QTableWidget()
+        headers = ["Título do Vídeo", "Canal", "Data Envio", "Total Views", "Views 90d", "Tráfego Diário", "Origem", "Ação"]
+        table.setColumnCount(len(headers))
+        table.setHorizontalHeaderLabels(headers)
+        table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        for i in range(1, len(headers)):
+            table.horizontalHeader().setSectionResizeMode(i, QHeaderView.ResizeMode.ResizeToContents)
+
+        table.setRowCount(len(self.associated_videos))
+        table.verticalHeader().setVisible(True)
+
+        for row, v in enumerate(self.associated_videos):
+            title_item = QTableWidgetItem(v.get("video_title", "Vídeo"))
+            title_item.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
+            title_item.setToolTip(v.get("video_title", ""))
+            table.setItem(row, 0, title_item)
+
+            channel_item = QTableWidgetItem(v.get("channel_name", ""))
+            table.setItem(row, 1, channel_item)
+
+            date_item = QTableWidgetItem(v.get("publish_date", "Recente"))
+            date_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            table.setItem(row, 2, date_item)
+
+            views_tot = v.get("view_count", 0)
+            tot_item = NumericTableWidgetItem(format_number(views_tot), views_tot)
+            tot_item.setForeground(QColor("#0284C7"))
+            tot_item.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
+            table.setItem(row, 3, tot_item)
+
+            views_90d = v.get("views_90d", views_tot)
+            v90d_item = NumericTableWidgetItem(format_number(views_90d), views_90d)
+            v90d_item.setForeground(QColor("#8B5CF6"))
+            v90d_item.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
+            table.setItem(row, 4, v90d_item)
+
+            d_views = v.get("daily_views", 0)
+            daily_item = NumericTableWidgetItem(f"🔥 {format_number(round(d_views, 1))}/dia", d_views)
+            daily_item.setForeground(QColor("#16A34A"))
+            daily_item.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
+            table.setItem(row, 5, daily_item)
+
+            src_item = QTableWidgetItem(v.get("source_location", "Descrição"))
+            table.setItem(row, 6, src_item)
+
+            # Action Button
+            btn_watch = QPushButton("▶ Assistir ↗")
+            btn_watch.setObjectName("btn_table_action")
+            btn_watch.setToolTip("Abrir no navegador padrão externo")
+            btn_watch.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+            v_url = v.get("video_url", "")
+            btn_watch.clicked.connect(lambda _, u=v_url: self._on_watch_clicked(u))
+            table.setCellWidget(row, 7, btn_watch)
+
+        layout.addWidget(table, 1)
+
+        # Close button
+        btn_close = QPushButton("Fechar")
+        btn_close.setFixedWidth(110)
+        btn_close.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        btn_close.clicked.connect(self.accept)
+        layout.addWidget(btn_close, alignment=Qt.AlignmentFlag.AlignRight)
+
+    def _on_watch_clicked(self, url: str):
+        from PyQt6.QtGui import QDesktopServices
+        if url:
+            QDesktopServices.openUrl(QUrl(url))
+
+
 class DomainTableView(QWidget):
     """
     Paginated interactive table for discovered domains and Instagram handles.
     Features:
+    - Expandable Drill-Down for multi-video domains ('➕ Ver Vídeos (X)').
     - 90-Day Traffic Sum ('Soma Views 90 Dias') across multiple videos.
     - Show/Hide Column Manager (Botão '👁️ Colunas' e menu contextual no cabeçalho).
     - Grouped by Domain: Shows exact count of videos where the domain appears.
@@ -777,17 +876,30 @@ class DomainTableView(QWidget):
             self.table.setItem(row, 2, domain_item)
 
             # 3. Video Count (Vídeos Onde Aparece)
-            v_cnt_text = f"🎯 {v_cnt} vídeos" if v_cnt > 1 else "🎯 1 vídeo"
-            v_cnt_item = NumericTableWidgetItem(v_cnt_text, v_cnt)
-            v_cnt_item.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
             if v_cnt > 1:
-                v_cnt_item.setForeground(QColor("#7C3AED"))
-            
-            tooltip_vids = "\n".join([f"• {v.get('video_title')} ({format_number(v.get('daily_views', 0))}/dia)" for v in assoc_vids[:8]])
-            if len(assoc_vids) > 8:
-                tooltip_vids += f"\n...e mais {len(assoc_vids) - 8} vídeos"
-            v_cnt_item.setToolTip(f"Presente em {v_cnt} vídeos:\n{tooltip_vids}")
-            self.table.setItem(row, 3, v_cnt_item)
+                v_cnt_widget = QWidget()
+                v_cnt_layout = QHBoxLayout(v_cnt_widget)
+                v_cnt_layout.setContentsMargins(4, 2, 4, 2)
+                v_cnt_layout.setSpacing(6)
+
+                lbl_cnt = QLabel(f"🎯 {v_cnt} vids")
+                lbl_cnt.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
+                lbl_cnt.setStyleSheet("color: #8B5CF6;")
+                v_cnt_layout.addWidget(lbl_cnt)
+
+                btn_expand = QPushButton(f"➕ Ver ({v_cnt})")
+                btn_expand.setObjectName("btn_table_action")
+                btn_expand.setStyleSheet("padding: 2px 6px; font-size: 10px; font-weight: 700; background-color: #1E293B; color: #38BDF8; border: 1px solid #334155; border-radius: 4px;")
+                btn_expand.setToolTip(f"Clique para ver os detalhes completos de todos os {v_cnt} vídeos que contêm este domínio")
+                btn_expand.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+                btn_expand.clicked.connect(lambda _, n=display_name, vids=assoc_vids: self._open_associated_videos_dialog(n, vids))
+                v_cnt_layout.addWidget(btn_expand)
+
+                self.table.setCellWidget(row, 3, v_cnt_widget)
+            else:
+                v_cnt_item = NumericTableWidgetItem("🎯 1 vídeo", 1)
+                v_cnt_item.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
+                self.table.setItem(row, 3, v_cnt_item)
 
             # 4. Cumulative Daily Traffic Sum (Soma Tráfego Diário)
             tot_daily = d.get("total_daily_views", 0)
@@ -890,3 +1002,8 @@ class DomainTableView(QWidget):
             self.table.setCellWidget(row, 13, action_widget)
 
         self.table.setSortingEnabled(True)
+
+    def _open_associated_videos_dialog(self, domain_name: str, associated_videos: List[Dict[str, Any]]):
+        """Open modal dialog detailing all associated videos for this domain."""
+        dialog = AssociatedVideosDialog(domain_name, associated_videos, self)
+        dialog.exec()

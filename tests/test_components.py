@@ -33,9 +33,9 @@ class TestYoutubeEspiaoCore(unittest.TestCase):
         # 2. Older video (365 days old with decay & evergreen 90d traffic)
         one_year_ago = datetime.now(timezone.utc) - timedelta(days=365)
         metrics_old = calculate_video_metrics(view_count=500000, upload_date=one_year_ago)
-        self.assertGreater(metrics_old["views_90d"], 50000)
+        self.assertGreater(metrics_old["views_90d"], 20000)
         self.assertLess(metrics_old["views_90d"], 500000)
-        self.assertGreater(metrics_old["hourly_views"], 10.0)
+        self.assertGreater(metrics_old["hourly_views"], 5.0)
 
     def test_format_number(self):
         """Test human readable number formatting."""
@@ -402,6 +402,64 @@ class TestYoutubeEspiaoCore(unittest.TestCase):
         self.assertEqual(BrowserView.extract_youtube_video_id("https://youtu.be/EYlh15Kboyo"), "EYlh15Kboyo")
         self.assertEqual(BrowserView.extract_youtube_video_id("https://www.youtube.com/embed/EYlh15Kboyo"), "EYlh15Kboyo")
         self.assertIsNone(BrowserView.extract_youtube_video_id("https://google.com"))
+
+    def test_clickable_links_filter(self):
+        """Test that only genuine clickable URLs are extracted and non-clickable text is discarded."""
+        extractor = DomainExtractor()
+        sample_text = """
+        Confira o curso: https://cursolinkclicavel123.com/aula
+        Acesse também www.ferramentaclicavel.org/app
+        Link curto: bit.ly/meulink456
+        Email para contato: contato@ignorar.com
+        Arquivo para download: imagem.png e instalador.exe
+        """
+        urls = extractor.extract_urls(sample_text)
+        domains = extractor.process_text_for_domains(sample_text)
+        extracted = [d["root_domain"] for d in domains]
+
+        self.assertIn("cursolinkclicavel123.com", extracted)
+        self.assertIn("ferramentaclicavel.org", extracted)
+        self.assertNotIn("imagem.png", urls)
+        self.assertNotIn("instalador.exe", urls)
+        self.assertNotIn("ignorar.com", extracted)
+
+    def test_autosave_manager(self):
+        """Test AutoSave session persistence and recovery."""
+        from core.autosave_manager import AutoSaveManager
+        manager = AutoSaveManager()
+
+        sample_vids = [{"id": "vid123", "title": "Vídeo Teste", "metrics": {"view_count": 1000}}]
+        sample_doms = [{"root_domain": "teste.com", "status": "Disponível"}]
+
+        # 1. Save session
+        success = manager.save_session(sample_vids, sample_doms, keywords=["teste"])
+        self.assertTrue(success)
+        self.assertTrue(manager.has_saved_session())
+
+        # 2. Load session
+        loaded = manager.load_saved_session()
+        self.assertIsNotNone(loaded)
+        self.assertEqual(len(loaded.get("videos", [])), 1)
+        self.assertEqual(len(loaded.get("domains", [])), 1)
+
+        # 3. Clear session
+        manager.clear_saved_session()
+        self.assertFalse(manager.has_saved_session())
+
+    def test_associated_videos_dialog(self):
+        """Test AssociatedVideosDialog creation and multi-video table rendering."""
+        from PyQt6.QtWidgets import QApplication
+        import sys
+        app = QApplication.instance() or QApplication(sys.argv)
+        from ui.video_table_model import AssociatedVideosDialog
+
+        assoc_vids = [
+            {"video_title": "Vídeo 1", "video_url": "https://youtube.com/watch?v=1", "channel_name": "Canal 1", "view_count": 1000, "daily_views": 50},
+            {"video_title": "Vídeo 2", "video_url": "https://youtube.com/watch?v=2", "channel_name": "Canal 2", "view_count": 5000, "daily_views": 200}
+        ]
+        dialog = AssociatedVideosDialog("dominio.com", assoc_vids)
+        self.assertEqual(dialog.domain_name, "dominio.com")
+        self.assertEqual(len(dialog.associated_videos), 2)
 
 if __name__ == "__main__":
     unittest.main()

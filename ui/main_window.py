@@ -15,6 +15,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, QEvent
 from PyQt6.QtGui import QFont, QCursor, QIcon, QAction
 
+from typing import Optional, Dict
 from ui.styles import DARK_THEME, LIGHT_THEME
 from ui.hunter_tab import HunterTab
 from ui.browser_view import BrowserView
@@ -214,6 +215,6 @@ class MainWindow(QMainWindow):
         self.browser_view.navigate_to(url)
         self.main_tabs.setCurrentIndex(1)
 
-    def _on_live_video_stream(self, url: str, title: str):
-        """Update live video feed in embedded browser in real-time."""
-        self.browser_view.set_live_video(url, title)
+    def _on_live_video_stream(self, url: str, title: str, video_data: Optional[Dict] = None):
+        """Update live video feed in embedded browser and monitor with rich intelligence in real-time."""
+        self.browser_view.set_live_video(url, title, video_data)
