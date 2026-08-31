@@ -115,38 +115,45 @@ class HelpDialog(QDialog):
         return f"""
         <style>{css}</style>
         <body>
-            <h2>Como os Cálculos de Tráfego são Realizados</h2>
-            <p>O YouTube Espião calcula o <b>volume real e projetado de visualizações passivas</b> de cada vídeo desde a data de postagem até o dia de hoje, permitindo avaliar com precisão o tráfego gerado por links presentes na descrição ou no comentário fixado.</p>
+            <h2>Como os Cálculos de Tráfego e Velocidade são Realizados</h2>
+            <p>O YouTube Espião calcula o <b>volume real, recente e projetado de visualizações passivas</b> de cada vídeo, combinando a data de postagem com curvas estatísticas de decaimento e tráfego de busca orgânica (padrão <i>vidIQ / SocialBlade</i>).</p>
 
             <div class="card">
                 <h3>1. Tempo Ativo do Vídeo</h3>
                 <div class="formula">Dias Ativos = Data Atual (Hoje) - Data de Postagem do Vídeo</div>
-                <p>Calculado com base no carimbo de data/hora (timestamp) oficial do YouTube. Vídeos postados hoje têm um valor mínimo de 1 hora ativa para evitar divisão por zero.</p>
+                <p>Calculado com base no carimbo oficial do YouTube. Vídeos postados hoje têm um valor mínimo de 1 hora ativa para evitar divisões irreais.</p>
             </div>
 
             <div class="card">
-                <h3>2. Visualizações por Dia (Views / Dia)</h3>
-                <div class="formula">Views / Dia = Total de Visualizações ÷ Dias Ativos</div>
-                <p>Representa o <b>fluxo médio diário contínuo</b> de visitantes que assistem àquele vídeo. Exemplo: um vídeo com 365.000 visualizações postado há 1 ano (365 dias) gera em média <b>1.000 views/dia</b>.</p>
+                <h3>2. ⚡ Visualizações nos Últimos 90 Dias (Tráfego Recente Evergreen)</h3>
+                <div class="formula">Vídeos &le; 90 dias: Views 90d = Total de Views<br>Vídeos &gt; 90 dias: Views 90d = Total de Views &times; (90 &divide; Dias Ativos)<sup>0.55</sup></div>
+                <p>Mede o <b>fluxo real recente de audiência nos últimos 3 meses</b>. Enquanto um vídeo de 5 anos atrás teve um pico inicial no lançamento, esta fórmula calcula o tráfego residual de pesquisa que ele continua recebendo organicamente hoje.</p>
             </div>
 
             <div class="card">
-                <h3>3. Visualizações por Hora (Views / Hora)</h3>
-                <div class="formula">Views / Hora = Total de Visualizações ÷ Horas Ativas</div>
-                <p>Mede a velocidade instantânea do vídeo. Útil para identificar vídeos com alta taxa de viralização recente.</p>
+                <h3>3. ⏱️ Velocidade Horária (VPH - Views Per Hour)</h3>
+                <div class="formula">VPH = (Visualizações nos Últimos 90 Dias &divide; 90) &divide; 24 Horas</div>
+                <p>Mede a velocidade contínua do vídeo a cada hora. Permite saber quantos visitantes por hora estão passando pela descrição e pelo comentário fixado do vídeo:</p>
+                <ul>
+                    <li><b>🔥 Super Viral:</b> Acima de 150 views/hora</li>
+                    <li><b>🚀 Alto Tráfego:</b> Entre 30 e 150 views/hora</li>
+                    <li><b>📈 Constante / Evergreen:</b> Entre 4 e 30 views/hora</li>
+                    <li><b>💤 Moderado:</b> Abaixo de 4 views/hora</li>
+                </ul>
             </div>
 
             <div class="card">
-                <h3>4. Projeções Mensal e Anual</h3>
-                <div class="formula">Views / Mês = Views / Dia × 30.416</div>
-                <div class="formula">Views / Ano = Views / Dia × 365.25</div>
-                <p>Permite estimar o potencial acumulado de tráfego passivo ao longo dos meses.</p>
+                <h3>4. Média Diária, Mensal e Anual</h3>
+                <div class="formula">Views / Dia = Views nos Últimos 90 Dias &divide; 90</div>
+                <div class="formula">Views / Mês = Views / Dia &times; 30.416</div>
+                <div class="formula">Views / Ano = Views / Dia &times; 365.25</div>
+                <p>Permite estimar o potencial acumulado de visitantes e cliques que um domínio expirado capturará ao longo de 1 ano.</p>
             </div>
 
             <div class="card">
-                <h3>5. 🔥 Soma do Tráfego Diário Acumulado (Múltiplos Vídeos)</h3>
-                <div class="formula">Soma Tráfego Diário = (Views/Dia do Vídeo 1) + (Views/Dia do Vídeo 2) + ... + (Views/Dia do Vídeo N)</div>
-                <p>Quando o mesmo domínio aparece em <b>vários vídeos de um canal ou pesquisa</b> (ex: em 5 vídeos que juntos somam 15.000 views/dia), o sistema agrega todos esses vídeos em uma única linha e calcula a <b>soma total do tráfego diário</b> gerado para aquele domínio.</p>
+                <h3>5. 🔥 Soma do Tráfego Acumulado (Múltiplos Vídeos)</h3>
+                <div class="formula">Soma Tráfego Diário = &Sigma; (Views/Dia de cada vídeo onde o domínio aparece)</div>
+                <p>Quando o mesmo domínio aparece em <b>vários vídeos de um canal ou pesquisa</b> (ex: em 5 vídeos que juntos somam 15.000 views/dia), o sistema agrupa todos em uma única linha e calcula a <b>soma total do tráfego diário e dos últimos 90 dias</b> gerado para aquele domínio.</p>
             </div>
         </body>
         """

@@ -17,16 +17,25 @@ from core.translator import expand_queries_for_language, translate_query, AVAILA
 class TestYoutubeEspiaoCore(unittest.TestCase):
 
     def test_metrics_calculator(self):
-        """Test calculation of hourly, daily, monthly, and annual view averages."""
+        """Test calculation of hourly, daily, monthly, 90-day, and annual view averages."""
+        # 1. Recent video (10 days old)
         ten_days_ago = datetime.now(timezone.utc) - timedelta(days=10)
         metrics = calculate_video_metrics(view_count=24000, upload_date=ten_days_ago)
 
         self.assertEqual(metrics["view_count"], 24000)
+        self.assertEqual(metrics["views_90d"], 24000)
         self.assertAlmostEqual(metrics["daily_views"], 2400.0, delta=20.0)
         self.assertAlmostEqual(metrics["hourly_views"], 100.0, delta=2.0)
         self.assertGreater(metrics["monthly_views"], 70000)
         self.assertGreater(metrics["yearly_views"], 800000)
         self.assertIn("24K", metrics["view_count_formatted"])
+
+        # 2. Older video (365 days old with decay & evergreen 90d traffic)
+        one_year_ago = datetime.now(timezone.utc) - timedelta(days=365)
+        metrics_old = calculate_video_metrics(view_count=500000, upload_date=one_year_ago)
+        self.assertGreater(metrics_old["views_90d"], 50000)
+        self.assertLess(metrics_old["views_90d"], 500000)
+        self.assertGreater(metrics_old["hourly_views"], 10.0)
 
     def test_format_number(self):
         """Test human readable number formatting."""

@@ -1,6 +1,8 @@
 """
-Video Table and Domain Table UI Components.
+Video Table and Domain Table UI Components with High-Precision Traffic & 90-Day Metrics.
 Features:
+- 90-Day Recent Traffic ('Views nos Últimos 90 Dias') to reveal active evergreen velocity.
+- VPH (Views Per Hour) with calibrated decay modeling.
 - Show/Hide Columns Manager (Botão '👁️ Colunas' e menu contextual no cabeçalho para exibir/ocultar qualquer coluna).
 - Domain Aggregation & Cumulative Traffic Calculation (Soma do tráfego diário total gerado em múltiplos vídeos).
 - 'Qtd de Vídeos Onde Aparece' (contagem precisa de vídeos onde cada domínio foi encontrado).
@@ -95,7 +97,7 @@ class AsyncThumbnailLabel(QLabel):
 class VideoTableView(QWidget):
     """
     Paginated interactive table for mined videos with 180x101 thumbnails,
-    Traffic Metrics, Upload Date, and customizable Column Visibility.
+    90-Day Traffic Metrics, Upload Date, and customizable Column Visibility.
     """
     open_video_requested = pyqtSignal(str)
 
@@ -104,6 +106,7 @@ class VideoTableView(QWidget):
         "Título do Vídeo",
         "Canal",
         "Total Views",
+        "Views (90 Dias)",
         "Views / Hora",
         "Views / Dia",
         "Views / Mês",
@@ -162,7 +165,6 @@ class VideoTableView(QWidget):
         self.table.setColumnCount(len(self.COLUMN_HEADERS))
         self.table.setHorizontalHeaderLabels(self.COLUMN_HEADERS)
         
-        # Large rows for 180x101 thumbnails with interactive resizing & movable columns
         self.table.verticalHeader().setDefaultSectionSize(115)
         self.table.verticalHeader().setVisible(True)
         self.table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
@@ -176,18 +178,19 @@ class VideoTableView(QWidget):
         for i in range(len(self.COLUMN_HEADERS)):
             header.setSectionResizeMode(i, QHeaderView.ResizeMode.Interactive)
 
-        # Generous default widths
+        # Default widths
         self.table.setColumnWidth(0, 205)  # Miniatura (Large 180px + padding)
-        self.table.setColumnWidth(1, 330)  # Título
-        self.table.setColumnWidth(2, 160)  # Canal
-        self.table.setColumnWidth(3, 110)  # Total Views
-        self.table.setColumnWidth(4, 110)  # Views / Hora
-        self.table.setColumnWidth(5, 110)  # Views / Dia
-        self.table.setColumnWidth(6, 110)  # Views / Mês
-        self.table.setColumnWidth(7, 110)  # Views / Ano
-        self.table.setColumnWidth(8, 120)  # Data de Envio
-        self.table.setColumnWidth(9, 140)  # Domínios
-        self.table.setColumnWidth(10, 110) # Ações
+        self.table.setColumnWidth(1, 320)  # Título
+        self.table.setColumnWidth(2, 150)  # Canal
+        self.table.setColumnWidth(3, 105)  # Total Views
+        self.table.setColumnWidth(4, 120)  # Views (90 Dias)
+        self.table.setColumnWidth(5, 105)  # Views / Hora
+        self.table.setColumnWidth(6, 105)  # Views / Dia
+        self.table.setColumnWidth(7, 105)  # Views / Mês
+        self.table.setColumnWidth(8, 105)  # Views / Ano
+        self.table.setColumnWidth(9, 115)  # Data de Envio
+        self.table.setColumnWidth(10, 135) # Domínios
+        self.table.setColumnWidth(11, 105) # Ações
 
         self.table.setAlternatingRowColors(True)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
@@ -354,46 +357,54 @@ class VideoTableView(QWidget):
             views_item.setForeground(QColor("#0284C7"))
             self.table.setItem(row, 3, views_item)
 
-            # 4. Hourly Average
+            # 4. Views in the last 90 Days (NEW!)
+            v_90d = m.get("views_90d", v_views)
+            views_90d_item = NumericTableWidgetItem(m.get("views_90d_formatted", format_number(v_90d)), v_90d)
+            views_90d_item.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
+            views_90d_item.setForeground(QColor("#8B5CF6")) # Purple highlight for 90d
+            views_90d_item.setToolTip(f"Volume projetado de visualizações geradas nos últimos 90 dias com base na curva de decaimento orgânico do YouTube.")
+            self.table.setItem(row, 4, views_90d_item)
+
+            # 5. Hourly Average (VPH)
             hourly_views = m.get("hourly_views", 0)
             hourly_item = NumericTableWidgetItem(m.get("hourly_views_formatted", "0/h"), hourly_views)
             hourly_item.setForeground(QColor("#D97706"))
             hourly_item.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
-            self.table.setItem(row, 4, hourly_item)
+            self.table.setItem(row, 5, hourly_item)
 
-            # 5. Daily Average
+            # 6. Daily Average
             daily_views = m.get("daily_views", 0)
             daily_item = NumericTableWidgetItem(m.get("daily_views_formatted", "0/dia"), daily_views)
             daily_item.setForeground(QColor("#16A34A"))
             daily_item.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
-            self.table.setItem(row, 5, daily_item)
+            self.table.setItem(row, 6, daily_item)
 
-            # 6. Monthly Average
+            # 7. Monthly Average
             monthly_views = m.get("monthly_views", 0)
             monthly_item = NumericTableWidgetItem(m.get("monthly_views_formatted", "0/mês"), monthly_views)
-            self.table.setItem(row, 6, monthly_item)
+            self.table.setItem(row, 7, monthly_item)
 
-            # 7. Yearly Average
+            # 8. Yearly Average
             yearly_views = m.get("yearly_views", 0)
             yearly_item = NumericTableWidgetItem(m.get("yearly_views_formatted", "0/ano"), yearly_views)
-            self.table.setItem(row, 7, yearly_item)
+            self.table.setItem(row, 8, yearly_item)
 
-            # 8. Publish Date (Data de Envio)
+            # 9. Publish Date (Data de Envio)
             pub_date = m.get("publish_date", "Recente")
             date_item = QTableWidgetItem(pub_date)
             date_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             date_item.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
-            self.table.setItem(row, 8, date_item)
+            self.table.setItem(row, 9, date_item)
 
-            # 9. Domains / IGs Badge Summary
+            # 10. Domains / IGs Badge Summary
             dom_summary = f"🟢 {avail_cnt} | 🟡 {inact_cnt} | Total: {len(domains)}"
             dom_item = NumericTableWidgetItem(dom_summary, avail_cnt * 1000000 + len(domains))
             if avail_cnt > 0:
                 dom_item.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
                 dom_item.setForeground(QColor("#16A34A"))
-            self.table.setItem(row, 9, dom_item)
+            self.table.setItem(row, 10, dom_item)
 
-            # 10. Action Buttons Widget
+            # 11. Action Buttons Widget
             action_widget = QWidget()
             action_layout = QHBoxLayout(action_widget)
             action_layout.setContentsMargins(6, 4, 6, 4)
@@ -406,7 +417,7 @@ class VideoTableView(QWidget):
             btn_open.clicked.connect(lambda _, u=v_url: self.open_video_requested.emit(u))
 
             action_layout.addWidget(btn_open)
-            self.table.setCellWidget(row, 10, action_widget)
+            self.table.setCellWidget(row, 11, action_widget)
 
         self.table.setSortingEnabled(True)
 
@@ -415,6 +426,7 @@ class DomainTableView(QWidget):
     """
     Paginated interactive table for discovered domains and Instagram handles.
     Features:
+    - 90-Day Traffic Sum ('Soma Views 90 Dias') across multiple videos.
     - Show/Hide Column Manager (Botão '👁️ Colunas' e menu contextual no cabeçalho).
     - Grouped by Domain: Shows exact count of videos where the domain appears.
     - Cumulative Daily Traffic Sum (Soma total do tráfego diário gerado em todos os vídeos associados).
@@ -429,6 +441,7 @@ class DomainTableView(QWidget):
         "Domínio / Conta IG",
         "Vídeos Presente",
         "Soma Tráfego Diário",
+        "Soma Views 90 Dias",
         "Soma Views Totais",
         "Vídeo Principal",
         "Data de Envio",
@@ -508,18 +521,19 @@ class DomainTableView(QWidget):
 
         # Optimized default widths
         self.table.setColumnWidth(0, 130)  # Status
-        self.table.setColumnWidth(1, 110)  # Tipo
-        self.table.setColumnWidth(2, 210)  # Domínio / IG
-        self.table.setColumnWidth(3, 125)  # Vídeos Presente
-        self.table.setColumnWidth(4, 160)  # Soma Tráfego Diário
-        self.table.setColumnWidth(5, 135)  # Soma Views Totais
-        self.table.setColumnWidth(6, 260)  # Vídeo Principal
-        self.table.setColumnWidth(7, 115)  # Data de Envio
-        self.table.setColumnWidth(8, 110)  # Views/Hora
-        self.table.setColumnWidth(9, 110)  # Views/Mês
-        self.table.setColumnWidth(10, 110) # Views/Ano
-        self.table.setColumnWidth(11, 220) # Detalhes
-        self.table.setColumnWidth(12, 175) # Ação
+        self.table.setColumnWidth(1, 105)  # Tipo
+        self.table.setColumnWidth(2, 205)  # Domínio / IG
+        self.table.setColumnWidth(3, 120)  # Vídeos Presente
+        self.table.setColumnWidth(4, 150)  # Soma Tráfego Diário
+        self.table.setColumnWidth(5, 140)  # Soma Views 90 Dias
+        self.table.setColumnWidth(6, 130)  # Soma Views Totais
+        self.table.setColumnWidth(7, 250)  # Vídeo Principal
+        self.table.setColumnWidth(8, 110)  # Data de Envio
+        self.table.setColumnWidth(9, 105)  # Views/Hora
+        self.table.setColumnWidth(10, 105) # Views/Mês
+        self.table.setColumnWidth(11, 105) # Views/Ano
+        self.table.setColumnWidth(12, 200) # Detalhes
+        self.table.setColumnWidth(13, 170) # Ação
 
         self.table.setAlternatingRowColors(True)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
@@ -597,6 +611,7 @@ class DomainTableView(QWidget):
             v_metrics = d.get("video_metrics", {})
             d_views = v_metrics.get("daily_views", 0)
             t_views = v_metrics.get("view_count", 0)
+            v_90d = v_metrics.get("views_90d", t_views)
             h_views = v_metrics.get("hourly_views", 0)
             m_views = v_metrics.get("monthly_views", 0)
             y_views = v_metrics.get("yearly_views", 0)
@@ -609,6 +624,7 @@ class DomainTableView(QWidget):
                 "publish_date": v_metrics.get("publish_date", ""),
                 "daily_views": d_views,
                 "view_count": t_views,
+                "views_90d": v_90d,
                 "source_location": d.get("source_location", "")
             }
 
@@ -619,6 +635,7 @@ class DomainTableView(QWidget):
                     "associated_videos": [video_entry],
                     "total_daily_views": d_views,
                     "total_view_count": t_views,
+                    "total_views_90d": v_90d,
                     "total_hourly_views": h_views,
                     "total_monthly_views": m_views,
                     "total_yearly_views": y_views,
@@ -632,6 +649,7 @@ class DomainTableView(QWidget):
                     existing["associated_videos"].append(video_entry)
                     existing["total_daily_views"] += d_views
                     existing["total_view_count"] += t_views
+                    existing["total_views_90d"] += v_90d
                     existing["total_hourly_views"] += h_views
                     existing["total_monthly_views"] += m_views
                     existing["total_yearly_views"] += y_views
@@ -762,9 +780,8 @@ class DomainTableView(QWidget):
             v_cnt_item = NumericTableWidgetItem(v_cnt_text, v_cnt)
             v_cnt_item.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
             if v_cnt > 1:
-                v_cnt_item.setForeground(QColor("#7C3AED")) # Highlight purple for multi-video domains!
+                v_cnt_item.setForeground(QColor("#7C3AED"))
             
-            # Rich Tooltip listing all videos
             tooltip_vids = "\n".join([f"• {v.get('video_title')} ({format_number(v.get('daily_views', 0))}/dia)" for v in assoc_vids[:8]])
             if len(assoc_vids) > 8:
                 tooltip_vids += f"\n...e mais {len(assoc_vids) - 8} vídeos"
@@ -780,54 +797,63 @@ class DomainTableView(QWidget):
             daily_item.setToolTip(f"Soma total do tráfego diário gerado por todos os {v_cnt} vídeos que contêm este domínio.")
             self.table.setItem(row, 4, daily_item)
 
-            # 5. Cumulative Total Views (Soma Views Totais)
+            # 5. Cumulative 90-Day Views Sum (Soma Views 90 Dias - NEW!)
+            tot_90d = d.get("total_views_90d", d.get("total_view_count", 0))
+            views_90d_formatted = f"⚡ {format_number(tot_90d)}"
+            views_90d_item = NumericTableWidgetItem(views_90d_formatted, tot_90d)
+            views_90d_item.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
+            views_90d_item.setForeground(QColor("#8B5CF6"))
+            views_90d_item.setToolTip(f"Soma das visualizações recentes estimadas nos últimos 90 dias de todos os vídeos associados.")
+            self.table.setItem(row, 5, views_90d_item)
+
+            # 6. Cumulative Total Views (Soma Views Totais)
             tot_views = d.get("total_view_count", 0)
             tot_views_formatted = f"{format_number(tot_views)}"
             tot_views_item = NumericTableWidgetItem(tot_views_formatted, tot_views)
             tot_views_item.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
             tot_views_item.setForeground(QColor("#0284C7"))
             tot_views_item.setToolTip(f"Soma de todas as visualizações acumuladas dos {v_cnt} vídeos associados.")
-            self.table.setItem(row, 5, tot_views_item)
+            self.table.setItem(row, 6, tot_views_item)
 
-            # 6. Associated / Primary Video Title
+            # 7. Associated / Primary Video Title
             v_title = d.get("video_title", "")
             title_item = QTableWidgetItem(v_title)
             title_item.setToolTip(f"{v_title}\nCanal: {d.get('channel_name', '')}\nLink: {d.get('video_url', '')}")
-            self.table.setItem(row, 6, title_item)
+            self.table.setItem(row, 7, title_item)
 
-            # 7. Upload Date (Data de Envio)
+            # 8. Upload Date (Data de Envio)
             pub_date = d.get("video_metrics", {}).get("publish_date", "Recente")
             date_item = QTableWidgetItem(pub_date)
             date_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             date_item.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
-            self.table.setItem(row, 7, date_item)
+            self.table.setItem(row, 8, date_item)
 
-            # 8. Cumulative Views per Hour
+            # 9. Cumulative Views per Hour
             tot_hourly = d.get("total_hourly_views", 0)
             hourly_item = NumericTableWidgetItem(f"{format_number(round(tot_hourly, 1))}/h", tot_hourly)
             hourly_item.setForeground(QColor("#D97706"))
-            self.table.setItem(row, 8, hourly_item)
+            self.table.setItem(row, 9, hourly_item)
 
-            # 9. Cumulative Views per Month
+            # 10. Cumulative Views per Month
             tot_monthly = d.get("total_monthly_views", 0)
             monthly_item = NumericTableWidgetItem(f"{format_number(round(tot_monthly, 1))}/mês", tot_monthly)
-            self.table.setItem(row, 9, monthly_item)
+            self.table.setItem(row, 10, monthly_item)
 
-            # 10. Cumulative Views per Year
+            # 11. Cumulative Views per Year
             tot_yearly = d.get("total_yearly_views", 0)
             yearly_item = NumericTableWidgetItem(f"{format_number(round(tot_yearly, 1))}/ano", tot_yearly)
-            self.table.setItem(row, 10, yearly_item)
+            self.table.setItem(row, 11, yearly_item)
 
-            # 11. Details / WHOIS with Source Location Badge
+            # 12. Details / WHOIS with Source Location Badge
             src_list = d.get("source_locations", [d.get("source_location", "")])
             src_label = ", ".join([s for s in src_list if s])
             raw_details = d.get("details", "")
             display_details = f"[{src_label}] {raw_details}" if src_label else raw_details
             details_item = QTableWidgetItem(display_details)
             details_item.setToolTip(f"Origem(ns): {src_label}\n{raw_details}")
-            self.table.setItem(row, 11, details_item)
+            self.table.setItem(row, 12, details_item)
 
-            # 12. Action Buttons Widget
+            # 13. Action Buttons Widget
             action_widget = QWidget()
             action_layout = QHBoxLayout(action_widget)
             action_layout.setContentsMargins(6, 4, 6, 4)
@@ -859,6 +885,6 @@ class DomainTableView(QWidget):
                 btn_buy.clicked.connect(lambda _, l=ig_url: self.buy_domain_requested.emit(l))
                 action_layout.addWidget(btn_buy)
 
-            self.table.setCellWidget(row, 12, action_widget)
+            self.table.setCellWidget(row, 13, action_widget)
 
         self.table.setSortingEnabled(True)

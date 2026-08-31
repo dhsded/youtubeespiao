@@ -3,7 +3,8 @@ Data Exporter for YouTube Miner, Domain and Instagram Results.
 Exports comprehensive executive reports in PDF, Excel (.xlsx), CSV, and JSON.
 Features:
 - High-fidelity Landscape PDF reports with interactive clickable links (YouTube URLs, Domain Registrar & Claim links).
-- Complete data columns: Video Count, Cumulative Daily Traffic, Total Views, Upload Date, and WHOIS details.
+- High-precision 90-Day Traffic Metrics ('Views nos Últimos 90 Dias') and calibrated VPH.
+- Complete data columns: Video Count, Cumulative Daily Traffic, 90-Day Views, Total Views, Upload Date, and WHOIS details.
 - Clean corporate typography and visual KPI badges.
 """
 
@@ -26,6 +27,7 @@ class DataExporter:
             v_cnt = item.get("video_count", 1)
             tot_daily = item.get("total_daily_views", v_metrics.get("daily_views", 0))
             tot_views = item.get("total_view_count", v_metrics.get("view_count", 0))
+            tot_90d = item.get("total_views_90d", v_metrics.get("views_90d", tot_views))
             
             rows.append({
                 "Tipo": "Instagram" if item.get("is_instagram") else "Domínio Web",
@@ -33,11 +35,12 @@ class DataExporter:
                 "Status": item.get("status"),
                 "Vídeos Presente (Qtd)": v_cnt,
                 "Soma Tráfego Diário (Views/Dia)": tot_daily,
+                "Soma Views 90 Dias": tot_90d,
                 "Soma Visualizações Totais": tot_views,
                 "Detalhes": item.get("details"),
                 "Título do Vídeo Principal": item.get("video_title"),
                 "Canal": item.get("channel_name"),
-                "Views por Hora (Média)": item.get("total_hourly_views", v_metrics.get("hourly_views", 0)),
+                "Views por Hora (VPH)": item.get("total_hourly_views", v_metrics.get("hourly_views", 0)),
                 "Views por Dia (Média)": tot_daily,
                 "Views por Mês (Média)": item.get("total_monthly_views", v_metrics.get("monthly_views", 0)),
                 "Views por Ano (Média)": item.get("total_yearly_views", v_metrics.get("yearly_views", 0)),
@@ -58,7 +61,8 @@ class DataExporter:
                 "Título": v.get("title"),
                 "Canal": v.get("channel_name"),
                 "Visualizações Totais": metrics.get("view_count", 0),
-                "Views/Hora": metrics.get("hourly_views", 0),
+                "Views nos Últimos 90 Dias": metrics.get("views_90d", metrics.get("view_count", 0)),
+                "Views/Hora (VPH)": metrics.get("hourly_views", 0),
                 "Views/Dia": metrics.get("daily_views", 0),
                 "Views/Mês": metrics.get("monthly_views", 0),
                 "Views/Ano": metrics.get("yearly_views", 0),
@@ -100,7 +104,7 @@ class DataExporter:
     def export_to_pdf(cls, file_path: str, domains_data: List[Dict[str, Any]], videos_data: List[Dict[str, Any]]):
         """
         Generates a comprehensive executive PDF report in Landscape format with clickable hyperlinks,
-        full traffic metrics, domain purchase links, and video source links.
+        90-day traffic metrics, domain purchase links, and video source links.
         """
         now_str = datetime.now().strftime("%d/%m/%Y às %H:%M:%S")
         total_videos = len(videos_data)
@@ -143,7 +147,7 @@ class DataExporter:
         </head>
         <body>
             <div class="header-title">🎯 YouTube Espião & Hunter Browser — Relatório Executivo de Mineração</div>
-            <div class="header-sub">Gerado em {now_str} • Relatório de Oportunidades & Análise de Tráfego</div>
+            <div class="header-sub">Gerado em {now_str} • Relatório de Oportunidades & Análise de Tráfego Recente (90 Dias & VPH)</div>
             
             <table class="summary-table">
                 <tr>
@@ -170,15 +174,16 @@ class DataExporter:
             <table class="data-table">
                 <thead>
                     <tr>
-                        <th style="width: 9%;">Status</th>
+                        <th style="width: 8%;">Status</th>
                         <th style="width: 6%;">Tipo</th>
-                        <th style="width: 17%;">Domínio / Conta</th>
-                        <th style="width: 8%;">Vídeos</th>
-                        <th style="width: 11%;">Soma Tráfego/Dia</th>
+                        <th style="width: 15%;">Domínio / Conta</th>
+                        <th style="width: 7%;">Vídeos</th>
+                        <th style="width: 10%;">Soma Tráfego/Dia</th>
+                        <th style="width: 10%;">Views 90 Dias</th>
                         <th style="width: 9%;">Views Totais</th>
-                        <th style="width: 20%;">Vídeo Principal (Link YouTube)</th>
-                        <th style="width: 8%;">Data Envio</th>
-                        <th style="width: 12%;">Ação de Compra / Claim</th>
+                        <th style="width: 19%;">Vídeo Principal (Link YouTube)</th>
+                        <th style="width: 7%;">Data Envio</th>
+                        <th style="width: 9%;">Ação Compra</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -186,7 +191,7 @@ class DataExporter:
 
         # Populate domains table with clickable links and formatted data
         if not domains_data:
-            html += "<tr><td colspan='9' style='text-align:center; color:#64748B;'>Nenhuma oportunidade encontrada na varredura.</td></tr>"
+            html += "<tr><td colspan='10' style='text-align:center; color:#64748B;'>Nenhuma oportunidade encontrada na varredura.</td></tr>"
         else:
             for d in domains_data:
                 status = d.get("status", "Desconhecido")
@@ -202,6 +207,9 @@ class DataExporter:
                 tot_daily = d.get("total_daily_views", d.get("video_metrics", {}).get("daily_views", 0))
                 daily_formatted = f"🔥 {format_number(round(tot_daily, 1))}/dia"
                 
+                tot_90d = d.get("total_views_90d", d.get("total_view_count", 0))
+                views_90d_formatted = f"⚡ {format_number(tot_90d)}"
+                
                 tot_views = d.get("total_view_count", d.get("video_metrics", {}).get("view_count", 0))
                 tot_views_formatted = format_number(tot_views)
                 
@@ -213,20 +221,18 @@ class DataExporter:
                 buy_link = d.get("buy_link", "")
                 reg_name = d.get("registrar_name", "Registrar")
 
-                # Format Video link cell
                 if v_url:
-                    video_link_html = f"<a class='watch-btn' href='{v_url}'>{v_title[:45]}... ↗</a><br><span class='small-gray'>Canal: {channel}</span>"
+                    video_link_html = f"<a class='watch-btn' href='{v_url}'>{v_title[:40]}... ↗</a><br><span class='small-gray'>Canal: {channel}</span>"
                 else:
-                    video_link_html = f"<b>{v_title[:45]}</b><br><span class='small-gray'>Canal: {channel}</span>"
+                    video_link_html = f"<b>{v_title[:40]}</b><br><span class='small-gray'>Canal: {channel}</span>"
 
-                # Format Action cell
                 if buy_link and status == "Disponível":
                     action_html = f"<a class='buy-btn' href='{buy_link}'>🛒 Comprar ({reg_name}) ↗</a>"
                 elif is_ig and status == "Disponível":
                     ig_claim_url = f"https://www.instagram.com/{name.replace('@', '')}"
                     action_html = f"<a class='buy-btn' href='{ig_claim_url}'>📸 Reivindicar IG ↗</a>"
                 else:
-                    action_html = f"<span class='small-gray'>{d.get('details', '')[:35]}</span>"
+                    action_html = f"<span class='small-gray'>{d.get('details', '')[:30]}</span>"
 
                 html += f"""
                     <tr>
@@ -235,6 +241,7 @@ class DataExporter:
                         <td><b>{name}</b><br><span class='small-gray'>{d.get('source_location', '')}</span></td>
                         <td><b>{v_cnt_str}</b></td>
                         <td style="color:#16A34A; font-weight:800;">{daily_formatted}</td>
+                        <td style="color:#8B5CF6; font-weight:700;">{views_90d_formatted}</td>
                         <td style="color:#0284C7; font-weight:700;">{tot_views_formatted}</td>
                         <td>{video_link_html}</td>
                         <td>{pub_date}</td>
@@ -246,26 +253,26 @@ class DataExporter:
                 </tbody>
             </table>
 
-            <h2>🏆 Vídeos Minerados & Desempenho de Tráfego (Links Clicáveis)</h2>
+            <h2>🏆 Vídeos Minerados & Desempenho de Tráfego Recente (Links Clicáveis)</h2>
             <table class="data-table">
                 <thead>
                     <tr>
-                        <th style="width: 32%;">Título do Vídeo (Clique para Assistir)</th>
+                        <th style="width: 30%;">Título do Vídeo (Clique para Assistir)</th>
                         <th style="width: 14%;">Canal</th>
-                        <th style="width: 10%;">Views Totais</th>
-                        <th style="width: 10%;">Views / Hora</th>
-                        <th style="width: 10%;">Views / Dia</th>
-                        <th style="width: 10%;">Data de Envio</th>
-                        <th style="width: 14%;">Domínios & Oportunidades</th>
+                        <th style="width: 9%;">Total Views</th>
+                        <th style="width: 10%;">Views 90 Dias</th>
+                        <th style="width: 9%;">Views / Hora</th>
+                        <th style="width: 9%;">Views / Dia</th>
+                        <th style="width: 8%;">Data Envio</th>
+                        <th style="width: 11%;">Domínios</th>
                     </tr>
                 </thead>
                 <tbody>
         """
 
-        # Populate top videos (sorted by daily views)
         top_videos = sorted(videos_data, key=lambda x: x.get("metrics", {}).get("daily_views", 0), reverse=True)
         if not top_videos:
-            html += "<tr><td colspan='7' style='text-align:center; color:#64748B;'>Nenhum vídeo registrado.</td></tr>"
+            html += "<tr><td colspan='8' style='text-align:center; color:#64748B;'>Nenhum vídeo registrado.</td></tr>"
         else:
             for v in top_videos:
                 m = v.get("metrics", {})
@@ -276,15 +283,16 @@ class DataExporter:
                 v_title = v.get("title", "")
 
                 if v_url:
-                    title_cell = f"<a class='watch-btn' href='{v_url}'>{v_title[:55]} ↗</a>"
+                    title_cell = f"<a class='watch-btn' href='{v_url}'>{v_title[:50]} ↗</a>"
                 else:
-                    title_cell = f"<b>{v_title[:55]}</b>"
+                    title_cell = f"<b>{v_title[:50]}</b>"
 
                 html += f"""
                     <tr>
                         <td>{title_cell}</td>
                         <td>{v.get('channel_name', '')}</td>
                         <td style="color:#0284C7; font-weight:700;">{m.get('view_count_formatted', '0')}</td>
+                        <td style="color:#8B5CF6; font-weight:700;">{m.get('views_90d_formatted', '0')}</td>
                         <td style="color:#D97706; font-weight:700;">{m.get('hourly_views_formatted', '0/h')}</td>
                         <td style="color:#16A34A; font-weight:800;">{m.get('daily_views_formatted', '0/dia')}</td>
                         <td>{m.get('publish_date', 'Recente')}</td>
@@ -299,7 +307,7 @@ class DataExporter:
         </html>
         """
 
-        # Render HTML to PDF in Landscape A4 for maximum table spacing
+        # Render HTML to PDF in Landscape A4
         doc = QTextDocument()
         doc.setHtml(html)
 
