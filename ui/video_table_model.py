@@ -410,8 +410,9 @@ class VideoTableView(QWidget):
             action_layout.setContentsMargins(6, 4, 6, 4)
             action_layout.setSpacing(6)
 
-            btn_open = QPushButton("▶ Assistir")
+            btn_open = QPushButton("▶ Assistir ↗")
             btn_open.setObjectName("btn_table_action")
+            btn_open.setToolTip("Abrir vídeo no YouTube no seu navegador padrão (Chrome/Edge) sem sair desta tela")
             btn_open.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
             v_url = v.get("url", "")
             btn_open.clicked.connect(lambda _, u=v_url: self.open_video_requested.emit(u))
@@ -863,24 +864,25 @@ class DomainTableView(QWidget):
             reg_name = d.get("registrar_name", "Registrador")
             v_url = d.get("video_url", "")
 
-            btn_watch = QPushButton("▶ Vídeo")
+            btn_watch = QPushButton("▶ Vídeo ↗")
             btn_watch.setObjectName("btn_table_action")
+            btn_watch.setToolTip("Abrir vídeo de origem no YouTube no seu navegador padrão (Chrome/Edge) sem sair desta tela")
             btn_watch.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
             btn_watch.clicked.connect(lambda _, u=v_url: self.open_video_requested.emit(u))
             action_layout.addWidget(btn_watch)
 
             if buy_link and status == "Disponível":
-                btn_buy = QPushButton(f"🛒 Registrar ({reg_name})")
+                btn_buy = QPushButton(f"🛒 Registrar ({reg_name}) ↗")
                 btn_buy.setObjectName("btn_table_buy")
-                btn_buy.setToolTip("Abrir no navegador padrão para comprar/registrar este domínio")
+                btn_buy.setToolTip("Abrir página de compra no seu navegador padrão (Chrome/Edge)")
                 btn_buy.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
                 btn_buy.clicked.connect(lambda _, l=buy_link: self.buy_domain_requested.emit(l))
                 action_layout.addWidget(btn_buy)
             elif is_ig and status == "Disponível":
                 ig_url = f"https://www.instagram.com/{display_name.replace('@', '')}"
-                btn_buy = QPushButton("📸 Reivindicar IG")
+                btn_buy = QPushButton("📸 Reivindicar IG ↗")
                 btn_buy.setObjectName("btn_table_buy")
-                btn_buy.setToolTip("Abrir no navegador padrão para verificar/reivindicar usuário do Instagram")
+                btn_buy.setToolTip("Abrir perfil no Instagram no seu navegador padrão (Chrome/Edge)")
                 btn_buy.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
                 btn_buy.clicked.connect(lambda _, l=ig_url: self.buy_domain_requested.emit(l))
                 action_layout.addWidget(btn_buy)
