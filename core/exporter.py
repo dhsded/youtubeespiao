@@ -19,18 +19,24 @@ class DataExporter:
         rows = []
         for item in domains_data:
             v_metrics = item.get("video_metrics", {})
+            v_cnt = item.get("video_count", 1)
+            tot_daily = item.get("total_daily_views", v_metrics.get("daily_views", 0))
+            tot_views = item.get("total_view_count", v_metrics.get("view_count", 0))
+            
             rows.append({
                 "Tipo": "Instagram" if item.get("is_instagram") else "Domínio Web",
                 "Domínio / Conta": item.get("display_name") or item.get("root_domain"),
                 "Status": item.get("status"),
+                "Vídeos Presente (Qtd)": v_cnt,
+                "Soma Tráfego Diário (Views/Dia)": tot_daily,
+                "Soma Visualizações Totais": tot_views,
                 "Detalhes": item.get("details"),
-                "Título do Vídeo": item.get("video_title"),
+                "Título do Vídeo Principal": item.get("video_title"),
                 "Canal": item.get("channel_name"),
-                "Views por Hora (Média)": v_metrics.get("hourly_views", 0),
-                "Views por Dia (Média)": v_metrics.get("daily_views", 0),
-                "Views por Mês (Média)": v_metrics.get("monthly_views", 0),
-                "Views por Ano (Média)": v_metrics.get("yearly_views", 0),
-                "Visualizações Totais": v_metrics.get("view_count", 0),
+                "Views por Hora (Média)": item.get("total_hourly_views", v_metrics.get("hourly_views", 0)),
+                "Views por Dia (Média)": tot_daily,
+                "Views por Mês (Média)": item.get("total_monthly_views", v_metrics.get("monthly_views", 0)),
+                "Views por Ano (Média)": item.get("total_yearly_views", v_metrics.get("yearly_views", 0)),
                 "Data de Publicação": v_metrics.get("publish_date", ""),
                 "Origem no Vídeo": item.get("source_location"),
                 "Link p/ Compra / Claim": item.get("buy_link"),

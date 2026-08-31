@@ -207,5 +207,44 @@ class TestYoutubeEspiaoCore(unittest.TestCase):
         self.assertTrue(hasattr(crawler, "get_channel_videos"))
         self.assertTrue(hasattr(crawler, "process_channel"))
 
+    def test_domain_aggregation_and_cumulative_traffic(self):
+        """Test aggregation of occurrences of the same domain in multiple videos and sum of daily views."""
+        from PyQt6.QtWidgets import QApplication
+        import sys
+        app = QApplication.instance() or QApplication(sys.argv)
+        from ui.video_table_model import DomainTableView
+        
+        table = DomainTableView()
+        
+        # Sample occurrences of the same domain in 2 distinct videos
+        dom_occurrences = [
+            {
+                "root_domain": "loja-dropshipping-antiga123.com",
+                "video_id": "vid_1",
+                "video_title": "Vídeo 1 de Dropshipping",
+                "video_url": "https://youtube.com/watch?v=vid_1",
+                "status": "Disponível",
+                "badge_icon": "🟢",
+                "video_metrics": {"daily_views": 1500, "view_count": 50000}
+            },
+            {
+                "root_domain": "loja-dropshipping-antiga123.com",
+                "video_id": "vid_2",
+                "video_title": "Vídeo 2 de Dropshipping",
+                "video_url": "https://youtube.com/watch?v=vid_2",
+                "status": "Disponível",
+                "badge_icon": "🟢",
+                "video_metrics": {"daily_views": 3200, "view_count": 100000}
+            }
+        ]
+        
+        table.set_domains(dom_occurrences)
+        self.assertEqual(len(table.raw_domains_data), 1) # Aggregated into 1 unique domain entry
+        
+        agg = table.raw_domains_data[0]
+        self.assertEqual(agg["video_count"], 2)
+        self.assertEqual(agg["total_daily_views"], 4700) # 1500 + 3200 = 4700 daily views sum!
+        self.assertEqual(agg["total_view_count"], 150000) # 50000 + 100000 = 150000 total views sum!
+
 if __name__ == "__main__":
     unittest.main()

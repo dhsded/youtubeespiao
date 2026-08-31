@@ -1,6 +1,8 @@
 """
 Video Table and Domain Table UI Components.
 Features:
+- Domain Aggregation & Cumulative Traffic Calculation (Soma do tráfego diário total gerado em múltiplos vídeos).
+- 'Qtd de Vídeos Onde Aparece' (contagem precisa de vídeos onde cada domínio foi encontrado).
 - Large HD Thumbnails (180x101 px) with async caching.
 - Explicit 'Data de Envio' (Video Upload Date) Column across all tables.
 - Drag & Drop column reorganization (Movable interactive headers).
@@ -376,7 +378,10 @@ class VideoTableView(QWidget):
 class DomainTableView(QWidget):
     """
     Paginated interactive table for discovered domains and Instagram handles.
-    Prioritizes AVAILABLE (🟢) domains/IGs on TOP and clearly displays Upload Date.
+    Features:
+    - Grouped by Domain: Shows exact count of videos where the domain appears.
+    - Cumulative Daily Traffic Sum (Soma total do tráfego diário gerado em todos os vídeos associados).
+    - Prioritizes AVAILABLE (🟢) domains/IGs on TOP with highest cumulative traffic.
     """
     buy_domain_requested = pyqtSignal(str)
     open_video_requested = pyqtSignal(str)
@@ -422,27 +427,28 @@ class DomainTableView(QWidget):
 
         layout.addLayout(toolbar)
 
-        # 2. Main Domain Table
+        # 2. Main Domain Table (13 Columns with Video Count & Cumulative Traffic)
         self.table = QTableWidget()
-        self.table.setColumnCount(12)
+        self.table.setColumnCount(13)
         self.table.setHorizontalHeaderLabels([
             "Status",
             "Tipo",
             "Domínio / Conta IG",
-            "Vídeo Associado",
+            "Vídeos Presente",
+            "Soma Tráfego Diário",
+            "Soma Views Totais",
+            "Vídeo Principal",
             "Data de Envio",
-            "Views / Hora",
-            "Views / Dia",
-            "Views / Mês",
-            "Views / Ano",
-            "Total Views",
+            "Views / Hora (Soma)",
+            "Views / Mês (Soma)",
+            "Views / Ano (Soma)",
             "Detalhes / WHOIS",
             "Ação de Compra / Claim"
         ])
 
         header = self.table.horizontalHeader()
         header.setSectionsMovable(True)
-        for i in range(12):
+        for i in range(13):
             header.setSectionResizeMode(i, QHeaderView.ResizeMode.Interactive)
 
         self.table.verticalHeader().setDefaultSectionSize(48)
@@ -454,15 +460,16 @@ class DomainTableView(QWidget):
         self.table.setColumnWidth(0, 140)  # Status
         self.table.setColumnWidth(1, 110)  # Tipo
         self.table.setColumnWidth(2, 220)  # Domínio / IG
-        self.table.setColumnWidth(3, 280)  # Vídeo
-        self.table.setColumnWidth(4, 115)  # Data de Envio
-        self.table.setColumnWidth(5, 105)  # Views/Hora
-        self.table.setColumnWidth(6, 105)  # Views/Dia
-        self.table.setColumnWidth(7, 105)  # Views/Mês
-        self.table.setColumnWidth(8, 105)  # Views/Ano
-        self.table.setColumnWidth(9, 105)  # Total Views
-        self.table.setColumnWidth(10, 240) # Detalhes
-        self.table.setColumnWidth(11, 160) # Ação
+        self.table.setColumnWidth(3, 130)  # Vídeos Presente
+        self.table.setColumnWidth(4, 155)  # Soma Tráfego Diário
+        self.table.setColumnWidth(5, 140)  # Soma Views Totais
+        self.table.setColumnWidth(6, 260)  # Vídeo Principal
+        self.table.setColumnWidth(7, 115)  # Data de Envio
+        self.table.setColumnWidth(8, 120)  # Views/Hora
+        self.table.setColumnWidth(9, 120)  # Views/Mês
+        self.table.setColumnWidth(10, 120) # Views/Ano
+        self.table.setColumnWidth(11, 230) # Detalhes
+        self.table.setColumnWidth(12, 160) # Ação
 
         self.table.setAlternatingRowColors(True)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
@@ -507,16 +514,69 @@ class DomainTableView(QWidget):
         layout.addWidget(self.pagination_frame)
 
     def set_domains(self, domains: List[Dict[str, Any]]):
+        """Aggregate occurrences of the same domain across multiple videos and calculate cumulative traffic."""
+        grouped_dict: Dict[str, Dict[str, Any]] = {}
+
+        for d in domains:
+            key = d.get("root_domain", "").strip().lower()
+            if not key:
+                continue
+
+            v_metrics = d.get("video_metrics", {})
+            d_views = v_metrics.get("daily_views", 0)
+            t_views = v_metrics.get("view_count", 0)
+            h_views = v_metrics.get("hourly_views", 0)
+            m_views = v_metrics.get("monthly_views", 0)
+            y_views = v_metrics.get("yearly_views", 0)
+
+            video_entry = {
+                "video_id": d.get("video_id"),
+                "video_title": d.get("video_title", ""),
+                "video_url": d.get("video_url", ""),
+                "channel_name": d.get("channel_name", ""),
+                "publish_date": v_metrics.get("publish_date", ""),
+                "daily_views": d_views,
+                "view_count": t_views,
+                "source_location": d.get("source_location", "")
+            }
+
+            if key not in grouped_dict:
+                grouped_dict[key] = {
+                    **d,
+                    "video_count": 1,
+                    "associated_videos": [video_entry],
+                    "total_daily_views": d_views,
+                    "total_view_count": t_views,
+                    "total_hourly_views": h_views,
+                    "total_monthly_views": m_views,
+                    "total_yearly_views": y_views,
+                    "source_locations": [d.get("source_location", "")]
+                }
+            else:
+                existing = grouped_dict[key]
+                v_id = d.get("video_id")
+                if not any(v.get("video_id") == v_id for v in existing["associated_videos"]):
+                    existing["video_count"] += 1
+                    existing["associated_videos"].append(video_entry)
+                    existing["total_daily_views"] += d_views
+                    existing["total_view_count"] += t_views
+                    existing["total_hourly_views"] += h_views
+                    existing["total_monthly_views"] += m_views
+                    existing["total_yearly_views"] += y_views
+                    if d.get("source_location") not in existing["source_locations"]:
+                        existing["source_locations"].append(d.get("source_location", ""))
+
+        aggregated_list = list(grouped_dict.values())
+
         def get_domain_priority_key(d: Dict[str, Any]):
             status = d.get("status", "")
             prio = 0 if status == "Disponível" else (1 if status == "Inativo" else 2)
-            m = d.get("video_metrics", {})
-            hourly = m.get("hourly_views", 0)
-            daily = m.get("daily_views", 0)
-            total = m.get("view_count", 0)
-            return (prio, -hourly, -daily, -total)
+            v_cnt = d.get("video_count", 1)
+            daily = d.get("total_daily_views", 0)
+            total = d.get("total_view_count", 0)
+            return (prio, -v_cnt, -daily, -total)
 
-        self.raw_domains_data = sorted(domains, key=get_domain_priority_key)
+        self.raw_domains_data = sorted(aggregated_list, key=get_domain_priority_key)
         self._apply_filter_and_render()
 
     def _on_filter_changed(self, idx: int):
@@ -581,7 +641,7 @@ class DomainTableView(QWidget):
         end_idx = start_idx + self.page_size
         page_items = self.filtered_domains_data[start_idx:end_idx]
 
-        self.lbl_page_info.setText(f"Página {self.current_page} de {total_pages} (Exibindo {len(page_items)} de {total_items} registros)")
+        self.lbl_page_info.setText(f"Página {self.current_page} de {total_pages} (Exibindo {len(page_items)} de {total_items} domínios únicos)")
         self.btn_prev_page.setEnabled(self.current_page > 1)
         self.btn_next_page.setEnabled(self.current_page < total_pages)
 
@@ -589,9 +649,10 @@ class DomainTableView(QWidget):
         self.table.setRowCount(len(page_items))
 
         for row, d in enumerate(page_items):
-            metrics = d.get("video_metrics", {})
             status = d.get("status", "Desconhecido")
             is_ig = d.get("is_instagram", False)
+            v_cnt = d.get("video_count", 1)
+            assoc_vids = d.get("associated_videos", [])
 
             # 0. Status Badge
             badge_icon = d.get("badge_icon", "⚪")
@@ -624,59 +685,77 @@ class DomainTableView(QWidget):
                 domain_item.setForeground(QColor("#16A34A"))
             self.table.setItem(row, 2, domain_item)
 
-            # 3. Associated Video Title
+            # 3. Video Count (Vídeos Onde Aparece)
+            v_cnt_text = f"🎯 {v_cnt} vídeos" if v_cnt > 1 else "🎯 1 vídeo"
+            v_cnt_item = NumericTableWidgetItem(v_cnt_text, v_cnt)
+            v_cnt_item.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
+            if v_cnt > 1:
+                v_cnt_item.setForeground(QColor("#7C3AED")) # Highlight purple for multi-video domains!
+            
+            # Rich Tooltip listing all videos
+            tooltip_vids = "\n".join([f"• {v.get('video_title')} ({format_number(v.get('daily_views', 0))}/dia)" for v in assoc_vids[:8]])
+            if len(assoc_vids) > 8:
+                tooltip_vids += f"\n...e mais {len(assoc_vids) - 8} vídeos"
+            v_cnt_item.setToolTip(f"Presente em {v_cnt} vídeos:\n{tooltip_vids}")
+            self.table.setItem(row, 3, v_cnt_item)
+
+            # 4. Cumulative Daily Traffic Sum (Soma Tráfego Diário)
+            tot_daily = d.get("total_daily_views", 0)
+            daily_formatted = f"🔥 {format_number(round(tot_daily, 1))}/dia"
+            daily_item = NumericTableWidgetItem(daily_formatted, tot_daily)
+            daily_item.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
+            daily_item.setForeground(QColor("#16A34A"))
+            daily_item.setToolTip(f"Soma total do tráfego diário gerado por todos os {v_cnt} vídeos que contêm este domínio.")
+            self.table.setItem(row, 4, daily_item)
+
+            # 5. Cumulative Total Views (Soma Views Totais)
+            tot_views = d.get("total_view_count", 0)
+            tot_views_formatted = f"{format_number(tot_views)}"
+            tot_views_item = NumericTableWidgetItem(tot_views_formatted, tot_views)
+            tot_views_item.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
+            tot_views_item.setForeground(QColor("#0284C7"))
+            tot_views_item.setToolTip(f"Soma de todas as visualizações acumuladas dos {v_cnt} vídeos associados.")
+            self.table.setItem(row, 5, tot_views_item)
+
+            # 6. Associated / Primary Video Title
             v_title = d.get("video_title", "")
             title_item = QTableWidgetItem(v_title)
             title_item.setToolTip(f"{v_title}\nCanal: {d.get('channel_name', '')}\nLink: {d.get('video_url', '')}")
-            self.table.setItem(row, 3, title_item)
+            self.table.setItem(row, 6, title_item)
 
-            # 4. Upload Date (Data de Envio)
-            pub_date = metrics.get("publish_date", "Recente")
+            # 7. Upload Date (Data de Envio)
+            pub_date = d.get("video_metrics", {}).get("publish_date", "Recente")
             date_item = QTableWidgetItem(pub_date)
             date_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             date_item.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
-            self.table.setItem(row, 4, date_item)
+            self.table.setItem(row, 7, date_item)
 
-            # 5. Views per Hour
-            hourly_v = metrics.get("hourly_views", 0)
-            hourly_item = NumericTableWidgetItem(metrics.get("hourly_views_formatted", "0/h"), hourly_v)
+            # 8. Cumulative Views per Hour
+            tot_hourly = d.get("total_hourly_views", 0)
+            hourly_item = NumericTableWidgetItem(f"{format_number(round(tot_hourly, 1))}/h", tot_hourly)
             hourly_item.setForeground(QColor("#D97706"))
-            hourly_item.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
-            self.table.setItem(row, 5, hourly_item)
+            self.table.setItem(row, 8, hourly_item)
 
-            # 6. Views per Day
-            daily_v = metrics.get("daily_views", 0)
-            daily_item = NumericTableWidgetItem(metrics.get("daily_views_formatted", "0/dia"), daily_v)
-            daily_item.setForeground(QColor("#16A34A"))
-            daily_item.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
-            self.table.setItem(row, 6, daily_item)
+            # 9. Cumulative Views per Month
+            tot_monthly = d.get("total_monthly_views", 0)
+            monthly_item = NumericTableWidgetItem(f"{format_number(round(tot_monthly, 1))}/mês", tot_monthly)
+            self.table.setItem(row, 9, monthly_item)
 
-            # 7. Views per Month
-            monthly_v = metrics.get("monthly_views", 0)
-            monthly_item = NumericTableWidgetItem(metrics.get("monthly_views_formatted", "0/mês"), monthly_v)
-            self.table.setItem(row, 7, monthly_item)
+            # 10. Cumulative Views per Year
+            tot_yearly = d.get("total_yearly_views", 0)
+            yearly_item = NumericTableWidgetItem(f"{format_number(round(tot_yearly, 1))}/ano", tot_yearly)
+            self.table.setItem(row, 10, yearly_item)
 
-            # 8. Views per Year
-            yearly_v = metrics.get("yearly_views", 0)
-            yearly_item = NumericTableWidgetItem(metrics.get("yearly_views_formatted", "0/ano"), yearly_v)
-            self.table.setItem(row, 8, yearly_item)
-
-            # 9. Total Views
-            v_views = metrics.get("view_count", 0)
-            views_item = NumericTableWidgetItem(metrics.get("view_count_formatted", "0"), v_views)
-            views_item.setForeground(QColor("#0284C7"))
-            views_item.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
-            self.table.setItem(row, 9, views_item)
-
-            # 10. Details / WHOIS with Source Location Badge
-            src_loc = d.get("source_location", "")
+            # 11. Details / WHOIS with Source Location Badge
+            src_list = d.get("source_locations", [d.get("source_location", "")])
+            src_label = ", ".join([s for s in src_list if s])
             raw_details = d.get("details", "")
-            display_details = f"[{src_loc}] {raw_details}" if src_loc else raw_details
+            display_details = f"[{src_label}] {raw_details}" if src_label else raw_details
             details_item = QTableWidgetItem(display_details)
-            details_item.setToolTip(f"Origem: {src_loc}\n{raw_details}")
-            self.table.setItem(row, 10, details_item)
+            details_item.setToolTip(f"Origem(ns): {src_label}\n{raw_details}")
+            self.table.setItem(row, 11, details_item)
 
-            # 11. Action Button
+            # 12. Action Button
             action_widget = QWidget()
             action_layout = QHBoxLayout(action_widget)
             action_layout.setContentsMargins(6, 4, 6, 4)
@@ -699,6 +778,6 @@ class DomainTableView(QWidget):
                 btn_buy.clicked.connect(lambda _, l=buy_link: self.buy_domain_requested.emit(l))
                 action_layout.addWidget(btn_buy)
 
-            self.table.setCellWidget(row, 11, action_widget)
+            self.table.setCellWidget(row, 12, action_widget)
 
         self.table.setSortingEnabled(True)
