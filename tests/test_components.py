@@ -246,5 +246,16 @@ class TestYoutubeEspiaoCore(unittest.TestCase):
         self.assertEqual(agg["total_daily_views"], 4700) # 1500 + 3200 = 4700 daily views sum!
         self.assertEqual(agg["total_view_count"], 150000) # 50000 + 100000 = 150000 total views sum!
 
+    def test_help_dialog_instantiation(self):
+        """Test HelpDialog instantiation and content tabs."""
+        from PyQt6.QtWidgets import QApplication
+        import sys
+        app = QApplication.instance() or QApplication(sys.argv)
+        from ui.help_dialog import HelpDialog
+        
+        dlg = HelpDialog()
+        self.assertIsNotNone(dlg)
+        self.assertTrue(dlg.findChild(object, "help_tabs") is not None)
+
 if __name__ == "__main__":
     unittest.main()

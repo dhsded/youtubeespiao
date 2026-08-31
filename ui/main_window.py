@@ -1,6 +1,6 @@
 """
 Main Application Window.
-Integrates the Hunter Panel, Chromium Web Browser View, and Settings with instant Dark/Light Mode switching.
+Integrates the Hunter Panel, Chromium Web Browser View, Settings, and Help Center with instant Dark/Light Mode switching.
 """
 
 from PyQt6.QtWidgets import (
@@ -14,6 +14,7 @@ from ui.styles import DARK_THEME, LIGHT_THEME
 from ui.hunter_tab import HunterTab
 from ui.browser_view import BrowserView
 from ui.settings_tab import SettingsTab
+from ui.help_dialog import HelpDialog
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -52,6 +53,28 @@ class MainWindow(QMainWindow):
         header_layout.addWidget(lbl_subtitle)
         header_layout.addStretch()
 
+        # Help Button (Top Right)
+        self.btn_help = QPushButton("📖 AJUDA")
+        self.btn_help.setObjectName("btn_help_action")
+        self.btn_help.setStyleSheet("""
+            QPushButton#btn_help_action {
+                background-color: #0284C7;
+                color: #FFFFFF;
+                font-weight: 800;
+                font-size: 12px;
+                padding: 6px 14px;
+                border-radius: 6px;
+                border: 1px solid #38BDF8;
+            }
+            QPushButton#btn_help_action:hover {
+                background-color: #0EA5E9;
+            }
+        """)
+        self.btn_help.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.btn_help.setToolTip("Abrir manual didático explicando todas as fórmulas, métricas e validação de domínios livres.")
+        self.btn_help.clicked.connect(self._open_help_dialog)
+        header_layout.addWidget(self.btn_help)
+
         # Theme Switcher Button
         self.btn_theme = QPushButton("☀️ Modo Claro")
         self.btn_theme.setObjectName("btn_theme_toggle")
@@ -59,7 +82,7 @@ class MainWindow(QMainWindow):
         self.btn_theme.clicked.connect(self._toggle_theme)
         header_layout.addWidget(self.btn_theme)
 
-        lbl_version = QLabel("v1.3.0")
+        lbl_version = QLabel("v1.4.0")
         lbl_version.setObjectName("header_version")
         header_layout.addWidget(lbl_version)
 
@@ -85,6 +108,11 @@ class MainWindow(QMainWindow):
         self.main_tabs.addTab(self.settings_tab, "⚙️ Configurações & Whitelist")
 
         main_layout.addWidget(self.main_tabs, 1)
+
+    def _open_help_dialog(self):
+        """Open the Didactic Help & Methodology Dialog."""
+        dialog = HelpDialog(self)
+        dialog.exec()
 
     def _toggle_theme(self):
         """Toggle between Dark and Light themes instantly across the entire application."""
