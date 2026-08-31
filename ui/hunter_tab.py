@@ -1,10 +1,13 @@
 """
-Hunter Panel (Painel Espião) - Core mining, domain & Instagram analysis interface.
+Hunter Panel (Painel Espião) - Core mining, channel harvester, domain & Instagram analysis interface.
 Features:
+- Dual Modes: Search by Keyword OR Search by Channel (single or bulk list of channels).
+- Channel Video Harvester (Populares / Recentes / Mais Antigos de Canais).
 - Live Video Streaming Signal to Integrated Chromium Browser.
 - Recursive Related Videos Search (Niche cluster discovery).
 - Prioritization by View Count (Vídeos Mais Vistos).
-- Robust Language Verification (Zero foreign leakage on universal acronyms like GTA).
+- High-precision Language Verification & Scoring.
+- Explicit 'Data de Envio' across all tables.
 - Real-time Telemetry HUD: Elapsed Time, Average speed per video, Estimated time remaining.
 - Turbo Ultra-Fast Mode vs Safe Anti-Ban Mode.
 - Date & Year Range Filters (Global, Specific Years, Year Ranges, Recents).
@@ -31,7 +34,7 @@ from ui.video_table_model import VideoTableView, DomainTableView
 from ui.settings_tab import APP_SETTINGS
 
 class CrawlerThread(QThread):
-    """Background worker thread supporting Multi-Language, Live Browser Signals, Date Filters & Related Videos."""
+    """Background worker thread supporting Keywords, Channel Harvester, Live Browser Signals & Telemetry."""
     video_found = pyqtSignal(dict)
     domain_found = pyqtSignal(dict)
     live_video_analyzed = pyqtSignal(str, str)
@@ -42,10 +45,11 @@ class CrawlerThread(QThread):
     def __init__(
         self,
         keywords: List[str],
-        selected_lang: str,
-        date_filter: str,
-        year_range: Optional[Tuple[int, int]],
-        max_videos: int,
+        search_mode: str = "keywords",
+        selected_lang: str = "pt",
+        date_filter: str = "all_time",
+        year_range: Optional[Tuple[int, int]] = None,
+        max_videos: int = 50,
         sort_by: str = "view_count",
         fast_mode: bool = True,
         include_related: bool = True,
@@ -54,6 +58,7 @@ class CrawlerThread(QThread):
     ):
         super().__init__(parent)
         self.keywords = [k.strip() for k in keywords if k.strip()]
+        self.search_mode = search_mode
         self.selected_lang = selected_lang
         self.date_filter = date_filter
         self.year_range = year_range
@@ -97,57 +102,89 @@ class CrawlerThread(QThread):
             cycle = 1
 
             while True:
-                for kw in self.keywords:
-                    if self._is_interrupted:
-                        break
-                    
-                    lang_tasks = expand_queries_for_language(kw, self.selected_lang)
-
-                    for task in lang_tasks:
+                if self.search_mode == "channels":
+                    # Channel Mode: Iterate through channels
+                    for ch in self.keywords:
                         if self._is_interrupted:
                             break
-
                         self._wait_if_paused()
-                        
-                        flag = task.get("flag", "🌐")
-                        lang_name = task.get("lang_name", "")
-                        query = task.get("query", kw)
-                        hl = task.get("hl", "pt")
-                        gl = task.get("gl", "BR")
+                        self.progress_updated.emit(0, self.max_videos, f"[Ciclo {cycle}] Coletando canal: {ch}...")
 
-                        task_label = f"{flag} {lang_name} ('{query}')"
-                        self.progress_updated.emit(0, self.max_videos, f"[Ciclo {cycle}] {task_label}...")
-
-                        def on_prog_wrapped(cur, tot, msg):
+                        def on_prog_wrapped_ch(cur, tot, msg):
                             self._wait_if_paused()
                             self.progress_updated.emit(cur, tot, f"[Ciclo {cycle}] {msg}")
 
-                        results = self.crawler.process_keyword(
-                            keyword=query,
-                            target_lang=self.selected_lang,
+                        results = self.crawler.process_channel(
+                            channel_identifier=ch,
                             max_videos=self.max_videos,
                             sort_by=self.sort_by,
-                            date_filter=self.date_filter,
-                            year_range=self.year_range,
-                            include_related=self.include_related,
-                            hl=hl,
-                            gl=gl,
-                            display_label=f"{flag} {lang_name}",
+                            hl="pt",
+                            gl="BR",
                             on_live_video=lambda u, t: self.live_video_analyzed.emit(u, t),
                             on_video_processed=lambda v: self.video_found.emit(v),
                             on_domain_found=lambda d: self.domain_found.emit(d),
-                            on_progress=on_prog_wrapped
+                            on_progress=on_prog_wrapped_ch
                         )
-
                         total_vids_count += results.get("total_videos", 0)
                         total_doms_count += results.get("total_domains", 0)
                         total_avail_count += results.get("available_domains", 0)
 
-                        if not self._is_interrupted and len(lang_tasks) > 1:
-                            time.sleep(0.8 if self.fast_mode else 2.0)
+                        if not self._is_interrupted and len(self.keywords) > 1:
+                            time.sleep(1.0 if self.fast_mode else 2.5)
 
-                    if not self._is_interrupted and len(self.keywords) > 1:
-                        time.sleep(1.0 if self.fast_mode else 2.5)
+                else:
+                    # Keyword Mode: Standard search
+                    for kw in self.keywords:
+                        if self._is_interrupted:
+                            break
+                        
+                        lang_tasks = expand_queries_for_language(kw, self.selected_lang)
+
+                        for task in lang_tasks:
+                            if self._is_interrupted:
+                                break
+
+                            self._wait_if_paused()
+                            
+                            flag = task.get("flag", "🌐")
+                            lang_name = task.get("lang_name", "")
+                            query = task.get("query", kw)
+                            hl = task.get("hl", "pt")
+                            gl = task.get("gl", "BR")
+
+                            task_label = f"{flag} {lang_name} ('{query}')"
+                            self.progress_updated.emit(0, self.max_videos, f"[Ciclo {cycle}] {task_label}...")
+
+                            def on_prog_wrapped(cur, tot, msg):
+                                self._wait_if_paused()
+                                self.progress_updated.emit(cur, tot, f"[Ciclo {cycle}] {msg}")
+
+                            results = self.crawler.process_keyword(
+                                keyword=query,
+                                target_lang=self.selected_lang,
+                                max_videos=self.max_videos,
+                                sort_by=self.sort_by,
+                                date_filter=self.date_filter,
+                                year_range=self.year_range,
+                                include_related=self.include_related,
+                                hl=hl,
+                                gl=gl,
+                                display_label=f"{flag} {lang_name}",
+                                on_live_video=lambda u, t: self.live_video_analyzed.emit(u, t),
+                                on_video_processed=lambda v: self.video_found.emit(v),
+                                on_domain_found=lambda d: self.domain_found.emit(d),
+                                on_progress=on_prog_wrapped
+                            )
+
+                            total_vids_count += results.get("total_videos", 0)
+                            total_doms_count += results.get("total_domains", 0)
+                            total_avail_count += results.get("available_domains", 0)
+
+                            if not self._is_interrupted and len(lang_tasks) > 1:
+                                time.sleep(0.8 if self.fast_mode else 2.0)
+
+                        if not self._is_interrupted and len(self.keywords) > 1:
+                            time.sleep(1.0 if self.fast_mode else 2.5)
 
                 if not self.loop_24h or self._is_interrupted:
                     break
@@ -171,7 +208,7 @@ class CrawlerThread(QThread):
 
 
 class HunterTab(QWidget):
-    """Main Hunting Dashboard with Multi-Language, Telemetry, Live Browser Signals & Related Videos."""
+    """Main Hunting Dashboard supporting Keywords, Channel Lists, Telemetry, Live Browser & Related Videos."""
     navigate_url_requested = pyqtSignal(str)
     live_video_stream = pyqtSignal(str, str)
     switch_to_browser_tab = pyqtSignal()
@@ -209,7 +246,7 @@ class HunterTab(QWidget):
         status_bar_layout.setSpacing(4)
 
         status_header_layout = QHBoxLayout()
-        self.status_label = QLabel("Pronto para iniciar a mineração. Digite termos e clique em 'Iniciar Busca'.")
+        self.status_label = QLabel("Pronto para iniciar a mineração. Digite termos ou canais e clique em 'Iniciar Busca'.")
         self.status_label.setObjectName("status_label")
         status_header_layout.addWidget(self.status_label, 1)
 
@@ -300,22 +337,31 @@ class HunterTab(QWidget):
         panel_layout.setContentsMargins(14, 12, 14, 12)
         panel_layout.setSpacing(10)
 
-        # Row 1: Search Inputs, Language, Date Filter, Custom Years, Sort
+        # Row 1: Mode Switcher, Input, Language / Date / Channels
         row1 = QHBoxLayout()
         row1.setSpacing(8)
 
-        self.input_keyword = QLineEdit()
-        self.input_keyword.setPlaceholderText("Digite termos de busca (ex: GTA, dropshipping, marketing digital)...")
-        self.input_keyword.setMinimumWidth(220)
-        self.input_keyword.returnPressed.connect(self._on_start_or_resume)
-        row1.addWidget(self.input_keyword, 3)
+        # Mode Switcher Dropdown
+        self.combo_mode = QComboBox()
+        self.combo_mode.addItem("🎯 Palavras-chave", "keywords")
+        self.combo_mode.addItem("📺 Canais do YouTube", "channels")
+        self.combo_mode.setMinimumWidth(165)
+        self.combo_mode.setMaximumWidth(190)
+        self.combo_mode.currentIndexChanged.connect(self._on_search_mode_changed)
+        row1.addWidget(self.combo_mode)
+
+        self.input_target = QLineEdit()
+        self.input_target.setPlaceholderText("Digite termos de busca (ex: GTA, dropshipping, marketing digital)...")
+        self.input_target.setMinimumWidth(220)
+        self.input_target.returnPressed.connect(self._on_start_or_resume)
+        row1.addWidget(self.input_target, 3)
 
         # Language Selector
         self.combo_lang = QComboBox()
         for l in get_language_list():
             self.combo_lang.addItem(l["label"], l["code"])
         self.combo_lang.setMinimumWidth(180)
-        self.combo_lang.setMaximumWidth(230)
+        self.combo_lang.setMaximumWidth(220)
         row1.addWidget(self.combo_lang)
 
         # Date & Year Range Selector
@@ -334,12 +380,12 @@ class HunterTab(QWidget):
         self.combo_date.addItem("⏱️ Este Mês", "this_month")
         self.combo_date.addItem("🗓️ Esta Semana", "this_week")
         self.combo_date.addItem("🔥 Últimas 24 Horas", "today")
-        self.combo_date.setMinimumWidth(190)
-        self.combo_date.setMaximumWidth(240)
+        self.combo_date.setMinimumWidth(180)
+        self.combo_date.setMaximumWidth(220)
         self.combo_date.currentIndexChanged.connect(self._on_date_filter_changed)
         row1.addWidget(self.combo_date)
 
-        # Custom Year Range Controls (Spacious 95px width with centered text)
+        # Custom Year Range Controls
         self.widget_custom_years = QWidget()
         custom_yr_layout = QHBoxLayout(self.widget_custom_years)
         custom_yr_layout.setContentsMargins(2, 0, 2, 0)
@@ -353,7 +399,7 @@ class HunterTab(QWidget):
         self.spin_year_start.setRange(2006, 2026)
         self.spin_year_start.setValue(2020)
         self.spin_year_start.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.spin_year_start.setFixedWidth(95)
+        self.spin_year_start.setFixedWidth(90)
         custom_yr_layout.addWidget(self.spin_year_start)
         
         lbl_ate = QLabel("Até:")
@@ -364,19 +410,19 @@ class HunterTab(QWidget):
         self.spin_year_end.setRange(2006, 2026)
         self.spin_year_end.setValue(2026)
         self.spin_year_end.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.spin_year_end.setFixedWidth(95)
+        self.spin_year_end.setFixedWidth(90)
         custom_yr_layout.addWidget(self.spin_year_end)
         
         self.widget_custom_years.setVisible(False)
         row1.addWidget(self.widget_custom_years)
 
-        # Sort Selection (Default: Mais Vistos / view_count)
+        # Sort Selection
         self.combo_sort = QComboBox()
         self.combo_sort.addItem("🔥 Mais Vistos (Padrão)", "view_count")
         self.combo_sort.addItem("🎯 Relevância", "relevance")
         self.combo_sort.addItem("📅 Mais Recentes", "upload_date")
-        self.combo_sort.setMinimumWidth(180)
-        self.combo_sort.setMaximumWidth(220)
+        self.combo_sort.setMinimumWidth(170)
+        self.combo_sort.setMaximumWidth(200)
         row1.addWidget(self.combo_sort)
 
         panel_layout.addLayout(row1)
@@ -385,7 +431,7 @@ class HunterTab(QWidget):
         row2 = QHBoxLayout()
         row2.setSpacing(8)
 
-        lbl_lim = QLabel("Limite:")
+        lbl_lim = QLabel("Limite por Termo/Canal:")
         lbl_lim.setStyleSheet("font-weight: 600;")
         row2.addWidget(lbl_lim)
 
@@ -397,8 +443,8 @@ class HunterTab(QWidget):
         self.spin_max.setFixedWidth(85)
         row2.addWidget(self.spin_max)
 
-        self.chk_unlimited = QCheckBox("♾️ Máx")
-        self.chk_unlimited.setToolTip("Busca o maior número possível de vídeos retornados.")
+        self.chk_unlimited = QCheckBox("♾️ Todos os Vídeos")
+        self.chk_unlimited.setToolTip("Busca todos os vídeos disponíveis do canal ou termo.")
         self.chk_unlimited.toggled.connect(lambda checked: self.spin_max.setEnabled(not checked))
         row2.addWidget(self.chk_unlimited)
 
@@ -454,9 +500,33 @@ class HunterTab(QWidget):
 
         return panel
 
+    def _on_search_mode_changed(self):
+        mode = self.combo_mode.currentData()
+        self.combo_sort.clear()
+
+        if mode == "channels":
+            self.input_target.setPlaceholderText("Digite canal ou lista de canais (ex: @GameplayRJ, @alanzoka, https://youtube.com/@canal)...")
+            self.combo_lang.setVisible(False)
+            self.combo_date.setVisible(False)
+            self.widget_custom_years.setVisible(False)
+            self.chk_include_related.setVisible(False)
+            self.combo_sort.addItem("🔥 Mais Populares (Padrão)", "popular")
+            self.combo_sort.addItem("📅 Mais Recentes", "newest")
+            self.combo_sort.addItem("⏳ Mais Antigos", "oldest")
+        else:
+            self.input_target.setPlaceholderText("Digite termos de busca (ex: GTA, dropshipping, marketing digital)...")
+            self.combo_lang.setVisible(True)
+            self.combo_date.setVisible(True)
+            self._on_date_filter_changed()
+            self.chk_include_related.setVisible(True)
+            self.combo_sort.addItem("🔥 Mais Vistos (Padrão)", "view_count")
+            self.combo_sort.addItem("🎯 Relevância", "relevance")
+            self.combo_sort.addItem("📅 Mais Recentes", "upload_date")
+
     def _on_date_filter_changed(self):
-        code = self.combo_date.currentData()
-        self.widget_custom_years.setVisible(code == "custom_range")
+        if self.combo_mode.currentData() == "keywords":
+            code = self.combo_date.currentData()
+            self.widget_custom_years.setVisible(code == "custom_range")
 
     def _update_telemetry(self):
         if self.start_time <= 0 or not self.crawler_thread or not self.crawler_thread.isRunning() or self.is_paused:
@@ -531,24 +601,27 @@ class HunterTab(QWidget):
             self.telemetry_timer.start()
             return
 
-        raw_text = self.input_keyword.text().strip()
+        raw_text = self.input_target.text().strip()
+        search_mode = self.combo_mode.currentData()
+
         if not raw_text:
-            QMessageBox.warning(self, "Atenção", "Por favor, digite pelo menos uma palavra-chave para minerar.")
+            msg = "Por favor, digite um canal ou lista de canais (ex: @canal1, @canal2)." if search_mode == "channels" else "Por favor, digite pelo menos uma palavra-chave."
+            QMessageBox.warning(self, "Atenção", msg)
             return
 
-        keywords = [k.strip() for k in raw_text.replace("\n", ",").replace(";", ",").split(",") if k.strip()]
-        selected_lang = self.combo_lang.currentData()
-        date_filter = self.combo_date.currentData()
-        year_range = (self.spin_year_start.value(), self.spin_year_end.value()) if date_filter == "custom_range" else None
+        targets = [k.strip() for k in raw_text.replace("\n", ",").replace(";", ",").split(",") if k.strip()]
+        selected_lang = self.combo_lang.currentData() if search_mode == "keywords" else "pt"
+        date_filter = self.combo_date.currentData() if search_mode == "keywords" else "all_time"
+        year_range = (self.spin_year_start.value(), self.spin_year_end.value()) if (search_mode == "keywords" and date_filter == "custom_range") else None
         max_vids = 5000 if self.chk_unlimited.isChecked() else self.spin_max.value()
         sort_by = self.combo_sort.currentData()
         fast_mode = self.chk_fast_mode.isChecked()
-        include_related = self.chk_include_related.isChecked()
+        include_related = self.chk_include_related.isChecked() if search_mode == "keywords" else False
         loop_24h = self.chk_mode_24h.isChecked()
 
         self.is_paused = False
         self.start_time = time.time()
-        self.target_video_count = max_vids * len(keywords)
+        self.target_video_count = max_vids * len(targets)
         self.telemetry_timer.start()
 
         self.btn_start.setEnabled(False)
@@ -557,11 +630,14 @@ class HunterTab(QWidget):
         self.btn_pause.setText("⏸️ Pausar")
         self.btn_stop.setEnabled(True)
         self.progress_bar.setValue(0)
-        self.status_label.setText(f"Minerando vídeos mais vistos em {self.combo_lang.currentText()} (Turbo: {fast_mode}, Relacionados: {include_related})...")
-        self._append_log(f"--- 🚀 Mineração Iniciada ({len(keywords)} termos | Idioma: {self.combo_lang.currentText()} | Turbo: {fast_mode} | Relacionados: {include_related}) ---")
+
+        mode_title = f"canais ({len(targets)} canais)" if search_mode == "channels" else f"termos ({len(targets)} termos)"
+        self.status_label.setText(f"Minerando vídeos de {mode_title} (Turbo: {fast_mode})...")
+        self._append_log(f"--- 🚀 Mineração Iniciada [Modo: {self.combo_mode.currentText()}] ({len(targets)} alvos | Turbo: {fast_mode}) ---")
 
         self.crawler_thread = CrawlerThread(
-            keywords=keywords,
+            keywords=targets,
+            search_mode=search_mode,
             selected_lang=selected_lang,
             date_filter=date_filter,
             year_range=year_range,

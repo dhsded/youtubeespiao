@@ -1,12 +1,15 @@
 """
-YouTube Crawler and Harvester (24/7 Multi-Language, Live Telemetry & Recursive Related Videos Engine).
+YouTube Crawler and Harvester (Keywords, Channels & Lists of Channels Engine).
 Features:
+- Dual Modes: Search by Keyword OR Search by Channel (single or bulk list of channels).
 - Primary sorting by Views Count (Vídeos Mais Vistos).
+- Channel Video Harvester (Populares / Recentes / Todos os Vídeos de Canais).
 - Live Real-Time Video Signal for Embedded Chromium Browser.
 - Recursive Related Videos Search (Busca em Vídeos Relacionados dentro do mesmo nicho/idioma).
-- Robust Language Verification: Filters out foreign videos when a specific language (e.g. Portuguese) is chosen.
-- Turbo Search Mode (Ultra-Fast 0.3s processing) vs Safe Anti-Ban Mode.
-- Date Filtering: Global/All-Time, Specific Years, Year Ranges, and YouTube intervals.
+- High-precision Language Verification & Scoring.
+- Date of Upload & Comprehensive Metrics Calculation.
+- Turbo Search Mode vs Safe Anti-Ban Mode.
+- Date Filtering: Global, Specific Years, Year Ranges, and YouTube intervals.
 - Automatic Duplicate Elimination (Session-wide seen video cache).
 """
 
@@ -166,6 +169,79 @@ class YouTubeCrawler:
 
         return results
 
+    def get_channel_videos(
+        self,
+        channel_identifier: str,
+        max_results: int = 50,
+        sort_by: str = "popular"
+    ) -> List[Dict[str, Any]]:
+        """
+        Fetch videos from a specific YouTube channel.
+        Supports URLs (@handle, /channel/UC..., /c/..., etc.), @handles, or usernames.
+        Sort options: 'popular' (mais vistos), 'newest' (mais recentes), 'oldest' (mais antigos).
+        """
+        results = []
+        clean = channel_identifier.strip()
+        if not clean:
+            return results
+
+        clean_sort = "popular" if sort_by in ("popular", "view_count") else ("oldest" if sort_by == "oldest" else "newest")
+        kwargs = {
+            "limit": max_results,
+            "sort_by": clean_sort
+        }
+
+        if clean.startswith("http://") or clean.startswith("https://"):
+            kwargs["channel_url"] = clean
+        elif clean.startswith("UC") and len(clean) >= 20:
+            kwargs["channel_id"] = clean
+        elif clean.startswith("@"):
+            kwargs["channel_url"] = f"https://www.youtube.com/{clean}"
+        else:
+            kwargs["channel_url"] = f"https://www.youtube.com/@{clean}"
+
+        try:
+            search_gen = scrapetube.get_channel(**kwargs)
+            for item in search_gen:
+                if self._is_stopped:
+                    break
+                vid_id = item.get("videoId")
+                if not vid_id:
+                    continue
+
+                # Title
+                title_runs = item.get("title", {}).get("runs", [])
+                title = title_runs[0].get("text", "") if title_runs else "Sem Título"
+
+                # Channel
+                owner_runs = item.get("ownerText", {}).get("runs", [])
+                channel_name = owner_runs[0].get("text", clean) if owner_runs else clean
+
+                # Thumbnail
+                thumbs = item.get("thumbnail", {}).get("thumbnails", [])
+                thumb_url = thumbs[-1].get("url") if thumbs else f"https://i.ytimg.com/vi/{vid_id}/hqdefault.jpg"
+
+                # View count text
+                view_text = item.get("viewCountText", {}).get("simpleText", "")
+                view_count = self._parse_view_count(view_text)
+
+                # Published time text
+                pub_text = item.get("publishedTimeText", {}).get("simpleText", "")
+
+                results.append({
+                    "id": vid_id,
+                    "url": f"https://www.youtube.com/watch?v={vid_id}",
+                    "title": title,
+                    "channel_name": channel_name,
+                    "thumbnail": thumb_url,
+                    "initial_view_count": view_count,
+                    "published_text": pub_text
+                })
+        except Exception as e:
+            logger.error(f"Error fetching channel videos for '{channel_identifier}': {e}")
+
+        return results
+
     def get_video_deep_details(self, video_url: str, hl: str = "pt", gl: str = "BR", retries: int = 1) -> Dict[str, Any]:
         """
         Fetch video metadata & comments with automatic retry and backoff.
@@ -228,6 +304,143 @@ class YouTubeCrawler:
                     time.sleep(0.3)
 
         return info
+
+    def process_channel(
+        self,
+        channel_identifier: str,
+        max_videos: int = 50,
+        sort_by: str = "popular",
+        hl: str = "pt",
+        gl: str = "BR",
+        on_live_video: Optional[Callable[[str, str], None]] = None,
+        on_video_processed: Optional[Callable[[Dict[str, Any]], None]] = None,
+        on_domain_found: Optional[Callable[[Dict[str, Any]], None]] = None,
+        on_progress: Optional[Callable[[int, int, str], None]] = None
+    ) -> Dict[str, Any]:
+        """
+        Process all or top videos of a specific YouTube channel, extracting domains and Instagram accounts.
+        """
+        self._is_stopped = False
+        display_name = channel_identifier if channel_identifier.startswith("@") or channel_identifier.startswith("http") else f"@{channel_identifier}"
+        
+        if on_progress:
+            on_progress(0, max_videos, f"Coletando vídeos do canal {display_name}...")
+
+        channel_vids = self.get_channel_videos(
+            channel_identifier=channel_identifier,
+            max_results=max_videos,
+            sort_by=sort_by
+        )
+
+        scanned_videos = []
+        all_domains = []
+        total_found = len(channel_vids)
+
+        for idx, v_item in enumerate(channel_vids):
+            if self._is_stopped:
+                break
+
+            vid_id = v_item.get("id")
+            if not vid_id or vid_id in self.seen_video_ids:
+                continue
+            self.seen_video_ids.add(vid_id)
+
+            current_num = idx + 1
+            if on_progress:
+                on_progress(current_num, max(total_found, max_videos), f"Canal {display_name} [{current_num}/{total_found}]: {v_item['title'][:32]}...")
+
+            if on_live_video:
+                on_live_video(v_item["url"], v_item["title"])
+
+            self._sleep_jitter()
+
+            deep_info = self.get_video_deep_details(v_item["url"], hl=hl, gl=gl)
+            
+            title = deep_info["title"] or v_item["title"]
+            channel = deep_info["channel_name"] or v_item["channel_name"]
+            thumbnail = deep_info["thumbnail"] or v_item["thumbnail"]
+            view_count = deep_info["view_count"] or v_item["initial_view_count"]
+            description = deep_info["description"]
+            pinned_comment = deep_info["pinned_comment"]
+            top_comments = deep_info.get("top_comments", [])
+
+            metrics = calculate_video_metrics(
+                view_count=view_count,
+                upload_date=deep_info["upload_date"],
+                timestamp=deep_info["timestamp"],
+                published_text=v_item.get("published_text")
+            )
+
+            pinned_domains = self.extractor.process_text_for_domains(pinned_comment, source_location="📌 Comentário Fixado") if pinned_comment else []
+            desc_domains = self.extractor.process_text_for_domains(description, source_location="📄 Descrição")
+            comments_text = " ".join(top_comments)
+            other_comment_domains = self.extractor.process_text_for_domains(comments_text, source_location="💬 Comentários")
+
+            combined_extracted_domains = pinned_domains + desc_domains + other_comment_domains
+
+            validated_domains_for_video = []
+            for d in combined_extracted_domains:
+                if d.get("is_instagram"):
+                    val_res = {
+                        "status": d.get("status", "Disponível"),
+                        "status_color": d.get("status_color", "#10B981"),
+                        "badge_icon": d.get("badge_icon", "🟢"),
+                        "details": d.get("details", ""),
+                        "dns_active": False,
+                        "ns_records": [],
+                        "ip_records": [],
+                        "expires_at": None,
+                        "buy_link": d.get("buy_link", ""),
+                        "registrar_name": "Instagram"
+                    }
+                else:
+                    val_res = self.validator.validate_domain(d["root_domain"])
+                
+                domain_record = {
+                    **d,
+                    **val_res,
+                    "video_id": v_item["id"],
+                    "video_title": title,
+                    "video_url": v_item["url"],
+                    "channel_name": channel,
+                    "keyword": display_name,
+                    "language": hl,
+                    "video_metrics": metrics
+                }
+                
+                validated_domains_for_video.append(domain_record)
+                all_domains.append(domain_record)
+
+                if on_domain_found:
+                    on_domain_found(domain_record)
+
+            video_record = {
+                "id": v_item["id"],
+                "url": v_item["url"],
+                "title": title,
+                "channel_name": channel,
+                "thumbnail": thumbnail,
+                "description": description,
+                "pinned_comment": pinned_comment,
+                "keyword": display_name,
+                "language": hl,
+                "metrics": metrics,
+                "domains": validated_domains_for_video
+            }
+
+            scanned_videos.append(video_record)
+
+            if on_video_processed:
+                on_video_processed(video_record)
+
+        return {
+            "channel": display_name,
+            "total_videos": len(scanned_videos),
+            "total_domains": len(all_domains),
+            "available_domains": sum(1 for d in all_domains if d.get("status") == "Disponível"),
+            "videos": scanned_videos,
+            "domains": all_domains
+        }
 
     def process_keyword(
         self,

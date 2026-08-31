@@ -200,5 +200,12 @@ class TestYoutubeEspiaoCore(unittest.TestCase):
         self.assertTrue(any(d.get("is_instagram") for d in domains))
         self.assertTrue(all(d["source_location"] == "📌 Comentário Fixado" for d in domains))
 
+    def test_channel_crawler_interface(self):
+        """Test YouTubeCrawler channel methods."""
+        from core.youtube_crawler import YouTubeCrawler
+        crawler = YouTubeCrawler()
+        self.assertTrue(hasattr(crawler, "get_channel_videos"))
+        self.assertTrue(hasattr(crawler, "process_channel"))
+
 if __name__ == "__main__":
     unittest.main()
