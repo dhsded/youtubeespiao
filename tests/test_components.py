@@ -404,11 +404,12 @@ class TestYoutubeEspiaoCore(unittest.TestCase):
         self.assertIsNone(BrowserView.extract_youtube_video_id("https://google.com"))
 
     def test_clickable_links_filter(self):
-        """Test that only genuine clickable URLs are extracted and non-clickable text is discarded."""
+        """Test that only genuine clickable URLs are extracted and Instagram @handles are allowed as the sole exception."""
         extractor = DomainExtractor()
         sample_text = """
         Confira o curso: https://cursolinkclicavel123.com/aula
         Acesse também www.ferramentaclicavel.org/app
+        Instagram oficial: @perfilteste_expirado123
         Link curto: bit.ly/meulink456
         Email para contato: contato@ignorar.com
         Arquivo para download: imagem.png e instalador.exe
@@ -419,6 +420,7 @@ class TestYoutubeEspiaoCore(unittest.TestCase):
 
         self.assertIn("cursolinkclicavel123.com", extracted)
         self.assertIn("ferramentaclicavel.org", extracted)
+        self.assertTrue(any(d.get("is_instagram") and "perfilteste_expirado123" in d.get("root_domain", "") for d in domains))
         self.assertNotIn("imagem.png", urls)
         self.assertNotIn("instalador.exe", urls)
         self.assertNotIn("ignorar.com", extracted)
