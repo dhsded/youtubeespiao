@@ -1,6 +1,10 @@
 """
 Data Exporter for YouTube Miner, Domain and Instagram Results.
 Exports comprehensive executive reports in PDF, Excel (.xlsx), CSV, and JSON.
+Features:
+- High-fidelity Landscape PDF reports with interactive clickable links (YouTube URLs, Domain Registrar & Claim links).
+- Complete data columns: Video Count, Cumulative Daily Traffic, Total Views, Upload Date, and WHOIS details.
+- Clean corporate typography and visual KPI badges.
 """
 
 import json
@@ -95,7 +99,8 @@ class DataExporter:
     @classmethod
     def export_to_pdf(cls, file_path: str, domains_data: List[Dict[str, Any]], videos_data: List[Dict[str, Any]]):
         """
-        Generates a clean executive PDF report using QTextDocument and QPdfWriter.
+        Generates a comprehensive executive PDF report in Landscape format with clickable hyperlinks,
+        full traffic metrics, domain purchase links, and video source links.
         """
         now_str = datetime.now().strftime("%d/%m/%Y às %H:%M:%S")
         total_videos = len(videos_data)
@@ -108,30 +113,37 @@ class DataExporter:
         <html>
         <head>
             <style>
-                body {{ font-family: Arial, sans-serif; color: #1E293B; font-size: 10pt; line-height: 1.3; }}
-                .header-title {{ font-size: 16pt; font-weight: bold; color: #1E3A8A; margin-bottom: 2px; }}
-                .header-sub {{ font-size: 9pt; color: #64748B; margin-bottom: 12px; }}
-                .summary-table {{ width: 100%; border-collapse: collapse; margin-bottom: 16px; }}
-                .summary-box {{ background-color: #F1F5F9; border: 1px solid #CBD5E1; padding: 8px; text-align: center; border-radius: 4px; }}
-                .summary-val {{ font-size: 13pt; font-weight: bold; color: #0F172A; }}
-                .summary-val-green {{ font-size: 13pt; font-weight: bold; color: #16A34A; }}
-                .summary-lbl {{ font-size: 8pt; color: #64748B; text-transform: uppercase; font-weight: bold; }}
+                body {{ font-family: 'Segoe UI', Arial, sans-serif; color: #0F172A; font-size: 8pt; line-height: 1.35; }}
+                .header-title {{ font-size: 14pt; font-weight: 800; color: #1E3A8A; margin-bottom: 2px; }}
+                .header-sub {{ font-size: 8pt; color: #64748B; margin-bottom: 10px; }}
+                .summary-table {{ width: 100%; border-collapse: collapse; margin-bottom: 12px; }}
+                .summary-box {{ background-color: #F8FAFC; border: 1px solid #CBD5E1; padding: 6px 10px; text-align: center; border-radius: 4px; }}
+                .summary-val {{ font-size: 12pt; font-weight: 800; color: #0F172A; }}
+                .summary-val-blue {{ font-size: 12pt; font-weight: 800; color: #0284C7; }}
+                .summary-val-purple {{ font-size: 12pt; font-weight: 800; color: #7C3AED; }}
+                .summary-val-green {{ font-size: 12pt; font-weight: 800; color: #16A34A; }}
+                .summary-lbl {{ font-size: 7.5pt; color: #475569; text-transform: uppercase; font-weight: 700; }}
                 
-                h2 {{ font-size: 12pt; color: #0F172A; border-bottom: 2px solid #2563EB; padding-bottom: 4px; margin-top: 14px; margin-bottom: 8px; }}
+                h2 {{ font-size: 10.5pt; color: #0F172A; border-bottom: 2px solid #2563EB; padding-bottom: 3px; margin-top: 10px; margin-bottom: 6px; }}
                 
-                table.data-table {{ width: 100%; border-collapse: collapse; font-size: 8.5pt; margin-bottom: 14px; }}
-                table.data-table th {{ background-color: #1E293B; color: #FFFFFF; font-weight: bold; padding: 6px; text-align: left; border: 1px solid #334155; }}
-                table.data-table td {{ padding: 5px; border: 1px solid #E2E8F0; vertical-align: middle; }}
+                table.data-table {{ width: 100%; border-collapse: collapse; font-size: 7.5pt; margin-bottom: 12px; }}
+                table.data-table th {{ background-color: #1E293B; color: #FFFFFF; font-weight: 700; padding: 5px 6px; text-align: left; border: 1px solid #334155; }}
+                table.data-table td {{ padding: 5px 6px; border: 1px solid #E2E8F0; vertical-align: top; }}
                 table.data-table tr:nth-child(even) {{ background-color: #F8FAFC; }}
                 
-                .badge-available {{ color: #16A34A; font-weight: bold; }}
-                .badge-inactive {{ color: #CA8A04; font-weight: bold; }}
+                .badge-available {{ color: #16A34A; font-weight: 800; }}
+                .badge-inactive {{ color: #D97706; font-weight: 700; }}
                 .badge-active {{ color: #DC2626; }}
+                
+                a {{ color: #0284C7; text-decoration: none; font-weight: 700; }}
+                a.buy-btn {{ color: #16A34A; font-weight: 800; text-decoration: underline; }}
+                a.watch-btn {{ color: #2563EB; font-weight: 700; text-decoration: underline; }}
+                .small-gray {{ font-size: 6.5pt; color: #64748B; font-weight: normal; }}
             </style>
         </head>
         <body>
-            <div class="header-title">🎯 YouTube Espião — Relatório de Mineração & Oportunidades</div>
-            <div class="header-sub">Gerado em {now_str} • Relatório Executivo</div>
+            <div class="header-title">🎯 YouTube Espião & Hunter Browser — Relatório Executivo de Mineração</div>
+            <div class="header-sub">Gerado em {now_str} • Relatório de Oportunidades & Análise de Tráfego</div>
             
             <table class="summary-table">
                 <tr>
@@ -140,56 +152,93 @@ class DataExporter:
                         <div class="summary-lbl">Vídeos Minerados</div>
                     </td>
                     <td class="summary-box" style="width: 25%;">
-                        <div class="summary-val">{format_number(total_views)}</div>
+                        <div class="summary-val-blue">{format_number(total_views)}</div>
                         <div class="summary-lbl">Visualizações Totais</div>
                     </td>
                     <td class="summary-box" style="width: 25%;">
-                        <div class="summary-val">{total_domains}</div>
+                        <div class="summary-val-purple">{total_domains}</div>
                         <div class="summary-lbl">Oportunidades Analisadas</div>
                     </td>
-                    <td class="summary-box" style="width: 25%; background-color: #F0FDF4; border-color: #16A34A;">
+                    <td class="summary-box" style="width: 25%; background-color: #DCFCE7; border-color: #16A34A;">
                         <div class="summary-val-green">{avail_count}</div>
-                        <div class="summary-lbl" style="color: #16A34A;">Disponíveis p/ Compra</div>
+                        <div class="summary-lbl" style="color: #15803D;">Disponíveis p/ Compra/Claim</div>
                     </td>
                 </tr>
             </table>
 
-            <h2>💎 Domínios e Contas de Instagram Expirados / Disponíveis</h2>
+            <h2>💎 Oportunidades: Domínios e Contas de Instagram (Agregados por Tráfego)</h2>
             <table class="data-table">
                 <thead>
                     <tr>
-                        <th style="width: 12%;">Status</th>
-                        <th style="width: 25%;">Domínio / Conta</th>
-                        <th style="width: 33%;">Vídeo Associado & Canal</th>
-                        <th style="width: 10%;">Views / Hora</th>
-                        <th style="width: 10%;">Views / Dia</th>
-                        <th style="width: 10%;">Total Views</th>
+                        <th style="width: 9%;">Status</th>
+                        <th style="width: 6%;">Tipo</th>
+                        <th style="width: 17%;">Domínio / Conta</th>
+                        <th style="width: 8%;">Vídeos</th>
+                        <th style="width: 11%;">Soma Tráfego/Dia</th>
+                        <th style="width: 9%;">Views Totais</th>
+                        <th style="width: 20%;">Vídeo Principal (Link YouTube)</th>
+                        <th style="width: 8%;">Data Envio</th>
+                        <th style="width: 12%;">Ação de Compra / Claim</th>
                     </tr>
                 </thead>
                 <tbody>
         """
 
-        # Populate domains
+        # Populate domains table with clickable links and formatted data
         if not domains_data:
-            html += "<tr><td colspan='6' style='text-align:center; color:#64748B;'>Nenhuma oportunidade encontrada.</td></tr>"
+            html += "<tr><td colspan='9' style='text-align:center; color:#64748B;'>Nenhuma oportunidade encontrada na varredura.</td></tr>"
         else:
             for d in domains_data:
-                status = d.get("status", "")
+                status = d.get("status", "Desconhecido")
+                is_ig = d.get("is_instagram", False)
+                type_label = "📸 Instagram" if is_ig else "🌐 Domínio"
                 badge_class = "badge-available" if status == "Disponível" else ("badge-inactive" if status == "Inativo" else "badge-active")
                 badge_icon = d.get("badge_icon", "⚪")
                 name = d.get("display_name") or d.get("root_domain", "")
-                v_title = d.get("video_title", "")[:45]
+                
+                v_cnt = d.get("video_count", 1)
+                v_cnt_str = f"🎯 {v_cnt} vídeos" if v_cnt > 1 else "🎯 1 vídeo"
+                
+                tot_daily = d.get("total_daily_views", d.get("video_metrics", {}).get("daily_views", 0))
+                daily_formatted = f"🔥 {format_number(round(tot_daily, 1))}/dia"
+                
+                tot_views = d.get("total_view_count", d.get("video_metrics", {}).get("view_count", 0))
+                tot_views_formatted = format_number(tot_views)
+                
+                v_title = d.get("video_title", "Vídeo")
+                v_url = d.get("video_url", "")
                 channel = d.get("channel_name", "")
-                m = d.get("video_metrics", {})
+                pub_date = d.get("video_metrics", {}).get("publish_date", "Recente")
+                
+                buy_link = d.get("buy_link", "")
+                reg_name = d.get("registrar_name", "Registrar")
+
+                # Format Video link cell
+                if v_url:
+                    video_link_html = f"<a class='watch-btn' href='{v_url}'>{v_title[:45]}... ↗</a><br><span class='small-gray'>Canal: {channel}</span>"
+                else:
+                    video_link_html = f"<b>{v_title[:45]}</b><br><span class='small-gray'>Canal: {channel}</span>"
+
+                # Format Action cell
+                if buy_link and status == "Disponível":
+                    action_html = f"<a class='buy-btn' href='{buy_link}'>🛒 Comprar ({reg_name}) ↗</a>"
+                elif is_ig and status == "Disponível":
+                    ig_claim_url = f"https://www.instagram.com/{name.replace('@', '')}"
+                    action_html = f"<a class='buy-btn' href='{ig_claim_url}'>📸 Reivindicar IG ↗</a>"
+                else:
+                    action_html = f"<span class='small-gray'>{d.get('details', '')[:35]}</span>"
 
                 html += f"""
                     <tr>
                         <td class="{badge_class}">{badge_icon} {status}</td>
-                        <td><b>{name}</b><br><span style="font-size:7.5pt; color:#64748B;">{d.get('source_location', '')}</span></td>
-                        <td>{v_title}<br><span style="font-size:7.5pt; color:#64748B;">Canal: {channel}</span></td>
-                        <td><b>{m.get('hourly_views_formatted', '0/h')}</b></td>
-                        <td><b>{m.get('daily_views_formatted', '0/dia')}</b></td>
-                        <td>{m.get('view_count_formatted', '0')}</td>
+                        <td>{type_label}</td>
+                        <td><b>{name}</b><br><span class='small-gray'>{d.get('source_location', '')}</span></td>
+                        <td><b>{v_cnt_str}</b></td>
+                        <td style="color:#16A34A; font-weight:800;">{daily_formatted}</td>
+                        <td style="color:#0284C7; font-weight:700;">{tot_views_formatted}</td>
+                        <td>{video_link_html}</td>
+                        <td>{pub_date}</td>
+                        <td>{action_html}</td>
                     </tr>
                 """
 
@@ -197,38 +246,49 @@ class DataExporter:
                 </tbody>
             </table>
 
-            <h2>🏆 Top Vídeos com Maior Velocidade de Tráfego</h2>
+            <h2>🏆 Vídeos Minerados & Desempenho de Tráfego (Links Clicáveis)</h2>
             <table class="data-table">
                 <thead>
                     <tr>
-                        <th style="width: 40%;">Título do Vídeo</th>
-                        <th style="width: 20%;">Canal</th>
-                        <th style="width: 13%;">Total Views</th>
-                        <th style="width: 13%;">Média / Dia</th>
-                        <th style="width: 14%;">Domínios</th>
+                        <th style="width: 32%;">Título do Vídeo (Clique para Assistir)</th>
+                        <th style="width: 14%;">Canal</th>
+                        <th style="width: 10%;">Views Totais</th>
+                        <th style="width: 10%;">Views / Hora</th>
+                        <th style="width: 10%;">Views / Dia</th>
+                        <th style="width: 10%;">Data de Envio</th>
+                        <th style="width: 14%;">Domínios & Oportunidades</th>
                     </tr>
                 </thead>
                 <tbody>
         """
 
-        # Populate top videos (up to 30)
-        top_videos = sorted(videos_data, key=lambda x: x.get("metrics", {}).get("daily_views", 0), reverse=True)[:30]
+        # Populate top videos (sorted by daily views)
+        top_videos = sorted(videos_data, key=lambda x: x.get("metrics", {}).get("daily_views", 0), reverse=True)
         if not top_videos:
-            html += "<tr><td colspan='5' style='text-align:center; color:#64748B;'>Nenhum vídeo registrado.</td></tr>"
+            html += "<tr><td colspan='7' style='text-align:center; color:#64748B;'>Nenhum vídeo registrado.</td></tr>"
         else:
             for v in top_videos:
                 m = v.get("metrics", {})
                 doms = v.get("domains", [])
                 avail_d = sum(1 for d in doms if d.get("status") == "Disponível")
-                dom_summary = f"🟢 {avail_d} disp. (Total {len(doms)})"
+                dom_summary = f"🟢 {avail_d} disp. | Total: {len(doms)}"
+                v_url = v.get("url", "")
+                v_title = v.get("title", "")
+
+                if v_url:
+                    title_cell = f"<a class='watch-btn' href='{v_url}'>{v_title[:55]} ↗</a>"
+                else:
+                    title_cell = f"<b>{v_title[:55]}</b>"
 
                 html += f"""
                     <tr>
-                        <td><b>{v.get('title', '')[:50]}</b></td>
+                        <td>{title_cell}</td>
                         <td>{v.get('channel_name', '')}</td>
-                        <td>{m.get('view_count_formatted', '0')}</td>
-                        <td><b>{m.get('daily_views_formatted', '0/dia')}</b></td>
-                        <td>{dom_summary}</td>
+                        <td style="color:#0284C7; font-weight:700;">{m.get('view_count_formatted', '0')}</td>
+                        <td style="color:#D97706; font-weight:700;">{m.get('hourly_views_formatted', '0/h')}</td>
+                        <td style="color:#16A34A; font-weight:800;">{m.get('daily_views_formatted', '0/dia')}</td>
+                        <td>{m.get('publish_date', 'Recente')}</td>
+                        <td><b>{dom_summary}</b></td>
                     </tr>
                 """
 
@@ -239,13 +299,13 @@ class DataExporter:
         </html>
         """
 
-        # Render HTML to PDF
+        # Render HTML to PDF in Landscape A4 for maximum table spacing
         doc = QTextDocument()
         doc.setHtml(html)
 
         writer = QPdfWriter(file_path)
         writer.setPageSize(QPageSize(QPageSize.PageSizeId.A4))
-        writer.setPageOrientation(QPageLayout.Orientation.Portrait)
-        writer.setPageMargins(QMarginsF(12, 12, 12, 12), QPageLayout.Unit.Millimeter)
+        writer.setPageOrientation(QPageLayout.Orientation.Landscape)
+        writer.setPageMargins(QMarginsF(10, 10, 10, 10), QPageLayout.Unit.Millimeter)
 
         doc.print(writer)

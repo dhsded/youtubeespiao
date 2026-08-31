@@ -299,5 +299,56 @@ class TestYoutubeEspiaoCore(unittest.TestCase):
         self.assertIsNotNone(dlg)
         self.assertTrue(dlg.findChild(object, "help_tabs") is not None)
 
+    def test_pdf_export_with_links(self):
+        """Test DataExporter export_to_pdf generation with hyperlinks."""
+        import os
+        import tempfile
+        from PyQt6.QtWidgets import QApplication
+        import sys
+        app = QApplication.instance() or QApplication(sys.argv)
+        from core.exporter import DataExporter
+        
+        sample_domains = [{
+            "root_domain": "exemplo123.com.br",
+            "status": "Disponível",
+            "is_instagram": False,
+            "badge_icon": "🟢",
+            "video_count": 3,
+            "total_daily_views": 8500,
+            "total_view_count": 250000,
+            "video_title": "Tutorial Completo GTA 5",
+            "video_url": "https://www.youtube.com/watch?v=12345678901",
+            "channel_name": "Canal Exemplo",
+            "buy_link": "https://registro.br/busca-dominio/?fqdn=exemplo123.com.br",
+            "registrar_name": "Registro.br",
+            "video_metrics": {"publish_date": "10/01/2024", "daily_views": 8500, "view_count": 250000}
+        }]
+        
+        sample_videos = [{
+            "id": "12345678901",
+            "title": "Tutorial Completo GTA 5",
+            "url": "https://www.youtube.com/watch?v=12345678901",
+            "channel_name": "Canal Exemplo",
+            "metrics": {
+                "view_count": 250000,
+                "view_count_formatted": "250K",
+                "hourly_views": 354,
+                "hourly_views_formatted": "354/h",
+                "daily_views": 8500,
+                "daily_views_formatted": "8.5K/dia",
+                "publish_date": "10/01/2024"
+            },
+            "domains": sample_domains
+        }]
+        
+        temp_pdf = os.path.join(tempfile.gettempdir(), "test_report_espiao.pdf")
+        try:
+            DataExporter.export_to_pdf(temp_pdf, sample_domains, sample_videos)
+            self.assertTrue(os.path.exists(temp_pdf))
+            self.assertGreater(os.path.getsize(temp_pdf), 1000)
+        finally:
+            if os.path.exists(temp_pdf):
+                os.remove(temp_pdf)
+
 if __name__ == "__main__":
     unittest.main()
