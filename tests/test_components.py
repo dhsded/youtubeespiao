@@ -161,5 +161,19 @@ class TestYoutubeEspiaoCore(unittest.TestCase):
         )
         self.assertFalse(en_video)
 
+    def test_pinned_comment_link_extraction(self):
+        """Test domain & Instagram extraction specifically from pinned comments."""
+        from core.domain_extractor import DomainExtractor
+        extractor = DomainExtractor()
+        pinned_text = "🔥 Acesse nosso servidor oficial em https://meu-gta-rp-servidor123.com e siga nosso IG @gtarproficialbr"
+        
+        domains = extractor.process_text_for_domains(pinned_text, source_location="📌 Comentário Fixado")
+        self.assertEqual(len(domains), 2)
+        
+        roots = [d["root_domain"] for d in domains]
+        self.assertIn("meu-gta-rp-servidor123.com", roots)
+        self.assertTrue(any(d.get("is_instagram") for d in domains))
+        self.assertTrue(all(d["source_location"] == "📌 Comentário Fixado" for d in domains))
+
 if __name__ == "__main__":
     unittest.main()

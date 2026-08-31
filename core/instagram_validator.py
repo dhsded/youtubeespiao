@@ -19,9 +19,9 @@ RESERVED_INSTAGRAM_HANDLES = {
     "business", "guidelines", "safety", "shopping", "home"
 }
 
-# Regex to capture Instagram URLs and raw @mentions
+# Regex to capture Instagram URLs and @mentions (avoiding emails)
 IG_URL_REGEX = re.compile(
-    r'(?:https?:\/\/)?(?:www\.)?(?:instagram\.com|instagr\.am)\/([a-zA-Z0-9_\.]{1,30})',
+    r'(?:(?:https?:\/\/)?(?:www\.)?(?:instagram\.com|instagr\.am)\/|(?:^|[\s\(\[\{\,\;:])@)([a-zA-Z0-9_\.]{2,30})',
     re.IGNORECASE
 )
 

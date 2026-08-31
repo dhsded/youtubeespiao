@@ -340,13 +340,13 @@ class YouTubeCrawler:
                 timestamp=deep_info["timestamp"]
             )
 
-            # Extract domains and Instagrams from Description and Comments
-            desc_domains = self.extractor.process_text_for_domains(description, source_location="Descrição")
-            pinned_domains = self.extractor.process_text_for_domains(pinned_comment, source_location="Comentário Fixado")
+            # Extract domains and Instagrams from Pinned Comment, Description, and other Comments
+            pinned_domains = self.extractor.process_text_for_domains(pinned_comment, source_location="📌 Comentário Fixado") if pinned_comment else []
+            desc_domains = self.extractor.process_text_for_domains(description, source_location="📄 Descrição")
             comments_text = " ".join(top_comments)
-            other_comment_domains = self.extractor.process_text_for_domains(comments_text, source_location="Comentários")
+            other_comment_domains = self.extractor.process_text_for_domains(comments_text, source_location="💬 Comentários")
 
-            combined_extracted_domains = desc_domains + pinned_domains + other_comment_domains
+            combined_extracted_domains = pinned_domains + desc_domains + other_comment_domains
 
             # Validate each domain or Instagram account
             validated_domains_for_video = []

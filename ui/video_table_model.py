@@ -629,9 +629,12 @@ class DomainTableView(QWidget):
             views_item.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
             self.table.setItem(row, 8, views_item)
 
-            # 9. Details / WHOIS
-            details_item = QTableWidgetItem(d.get("details", ""))
-            details_item.setToolTip(d.get("details", ""))
+            # 9. Details / WHOIS with Source Location Badge
+            src_loc = d.get("source_location", "")
+            raw_details = d.get("details", "")
+            display_details = f"[{src_loc}] {raw_details}" if src_loc else raw_details
+            details_item = QTableWidgetItem(display_details)
+            details_item.setToolTip(f"Origem: {src_loc}\n{raw_details}")
             self.table.setItem(row, 9, details_item)
 
             # 10. Action Button
