@@ -395,5 +395,13 @@ class TestYoutubeEspiaoCore(unittest.TestCase):
         d_table.table.setColumnHidden(3, False)
         self.assertFalse(d_table.table.isColumnHidden(3))
 
+    def test_browser_extract_video_id(self):
+        """Test extraction of YouTube 11-char video IDs in BrowserView."""
+        from ui.browser_view import BrowserView
+        self.assertEqual(BrowserView.extract_youtube_video_id("https://www.youtube.com/watch?v=EYlh15Kboyo"), "EYlh15Kboyo")
+        self.assertEqual(BrowserView.extract_youtube_video_id("https://youtu.be/EYlh15Kboyo"), "EYlh15Kboyo")
+        self.assertEqual(BrowserView.extract_youtube_video_id("https://www.youtube.com/embed/EYlh15Kboyo"), "EYlh15Kboyo")
+        self.assertIsNone(BrowserView.extract_youtube_video_id("https://google.com"))
+
 if __name__ == "__main__":
     unittest.main()
