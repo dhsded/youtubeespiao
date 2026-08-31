@@ -97,7 +97,7 @@ class BrowserView(QWidget):
         self.btn_zoom_out.clicked.connect(self._zoom_out)
 
         self.btn_zoom_reset = QPushButton("90%")
-        self.btn_zoom_reset.setFixedWidth(46)
+        self.btn_zoom_reset.setFixedWidth(50)
         self.btn_zoom_reset.setToolTip("Restaurar Zoom Padrão (100%)")
         self.btn_zoom_reset.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.btn_zoom_reset.clicked.connect(self._zoom_reset)
@@ -107,6 +107,14 @@ class BrowserView(QWidget):
         self.btn_zoom_in.setToolTip("Aumentar Zoom (Aproximar)")
         self.btn_zoom_in.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.btn_zoom_in.clicked.connect(self._zoom_in)
+
+        # Open in External Desktop Browser (Chrome/Edge/Firefox)
+        self.btn_open_ext = QPushButton("🚀 Abrir no Chrome/Edge")
+        self.btn_open_ext.setObjectName("btn_open_ext_browser")
+        self.btn_open_ext.setToolTip("Abrir a página atual no seu navegador padrão externo (Chrome, Edge, Firefox, Brave)")
+        self.btn_open_ext.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.btn_open_ext.clicked.connect(self._open_in_external_browser)
+        nav_layout.addWidget(self.btn_open_ext)
 
         # Quick Links
         self.btn_reg_br = QPushButton("🇧🇷 Registro.br")
@@ -209,6 +217,14 @@ class BrowserView(QWidget):
 
     def _reload_page(self):
         self.web_view.reload()
+
+    def _open_in_external_browser(self):
+        from PyQt6.QtGui import QDesktopServices
+        clean_url = self.url_bar.text().strip()
+        if clean_url:
+            if not (clean_url.startswith("http://") or clean_url.startswith("https://")):
+                clean_url = "https://" + clean_url
+            QDesktopServices.openUrl(QUrl(clean_url))
 
     def _on_web_url_changed(self, qurl: QUrl):
         self.url_bar.setText(qurl.toString())

@@ -1,6 +1,7 @@
 """
 Video Table and Domain Table UI Components.
 Features:
+- Show/Hide Columns Manager (Botão '👁️ Colunas' e menu contextual no cabeçalho para exibir/ocultar qualquer coluna).
 - Domain Aggregation & Cumulative Traffic Calculation (Soma do tráfego diário total gerado em múltiplos vídeos).
 - 'Qtd de Vídeos Onde Aparece' (contagem precisa de vídeos onde cada domínio foi encontrado).
 - Large HD Thumbnails (180x101 px) with async caching.
@@ -17,10 +18,10 @@ from typing import List, Dict, Any, Optional
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTableWidget,
     QTableWidgetItem, QPushButton, QLabel, QComboBox,
-    QFrame, QHeaderView, QLineEdit, QCheckBox
+    QFrame, QHeaderView, QLineEdit, QCheckBox, QMenu
 )
-from PyQt6.QtCore import Qt, pyqtSignal, QUrl
-from PyQt6.QtGui import QColor, QFont, QCursor, QPixmap, QImage
+from PyQt6.QtCore import Qt, pyqtSignal, QUrl, QPoint
+from PyQt6.QtGui import QColor, QFont, QCursor, QPixmap, QImage, QAction
 from PyQt6.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
 
 from core.metrics_calculator import format_number
@@ -94,9 +95,23 @@ class AsyncThumbnailLabel(QLabel):
 class VideoTableView(QWidget):
     """
     Paginated interactive table for mined videos with 180x101 thumbnails,
-    Traffic Metrics, Upload Date ('Data de Envio'), and Discovered Domains summary.
+    Traffic Metrics, Upload Date, and customizable Column Visibility.
     """
     open_video_requested = pyqtSignal(str)
+
+    COLUMN_HEADERS = [
+        "Miniatura",
+        "Título do Vídeo",
+        "Canal",
+        "Total Views",
+        "Views / Hora",
+        "Views / Dia",
+        "Views / Mês",
+        "Views / Ano",
+        "Data de Envio",
+        "Domínios / IGs",
+        "Ações"
+    ]
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -117,7 +132,7 @@ class VideoTableView(QWidget):
 
         # 1. Top Filter & Search Bar
         toolbar = QHBoxLayout()
-        toolbar.setSpacing(12)
+        toolbar.setSpacing(10)
 
         self.chk_filter_avail = QCheckBox("🟢 Mostrar apenas vídeos com domínios/IGs disponíveis")
         self.chk_filter_avail.setStyleSheet("font-weight: 700; color: #10B981;")
@@ -126,9 +141,17 @@ class VideoTableView(QWidget):
 
         toolbar.addStretch()
 
+        # Column Selector Button
+        self.btn_columns = QPushButton("👁️ Colunas")
+        self.btn_columns.setObjectName("btn_table_action")
+        self.btn_columns.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.btn_columns.setToolTip("Exibir ou ocultar colunas da tabela")
+        self.btn_columns.clicked.connect(self._show_column_menu)
+        toolbar.addWidget(self.btn_columns)
+
         self.input_search = QLineEdit()
-        self.input_search.setPlaceholderText("🔍 Filtrar resultados na lista...")
-        self.input_search.setFixedWidth(240)
+        self.input_search.setPlaceholderText("🔍 Filtrar vídeos...")
+        self.input_search.setFixedWidth(220)
         self.input_search.textChanged.connect(self._on_search_changed)
         toolbar.addWidget(self.input_search)
 
@@ -136,20 +159,8 @@ class VideoTableView(QWidget):
 
         # 2. Main Video Table
         self.table = QTableWidget()
-        self.table.setColumnCount(11)
-        self.table.setHorizontalHeaderLabels([
-            "Miniatura",
-            "Título do Vídeo",
-            "Canal",
-            "Total Views",
-            "Views / Hora",
-            "Views / Dia",
-            "Views / Mês",
-            "Views / Ano",
-            "Data de Envio",
-            "Domínios / IGs",
-            "Ações"
-        ])
+        self.table.setColumnCount(len(self.COLUMN_HEADERS))
+        self.table.setHorizontalHeaderLabels(self.COLUMN_HEADERS)
         
         # Large rows for 180x101 thumbnails with interactive resizing & movable columns
         self.table.verticalHeader().setDefaultSectionSize(115)
@@ -159,7 +170,10 @@ class VideoTableView(QWidget):
 
         header = self.table.horizontalHeader()
         header.setSectionsMovable(True)
-        for i in range(11):
+        header.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        header.customContextMenuRequested.connect(self._on_header_context_menu)
+
+        for i in range(len(self.COLUMN_HEADERS)):
             header.setSectionResizeMode(i, QHeaderView.ResizeMode.Interactive)
 
         # Generous default widths
@@ -216,6 +230,28 @@ class VideoTableView(QWidget):
         p_layout.addWidget(self.combo_page_size)
 
         layout.addWidget(self.pagination_frame)
+
+    def _show_column_menu(self):
+        menu = QMenu(self)
+        menu.setStyleSheet("QMenu { padding: 6px; font-weight: 600; }")
+        for i, name in enumerate(self.COLUMN_HEADERS):
+            action = QAction(name, menu)
+            action.setCheckable(True)
+            action.setChecked(not self.table.isColumnHidden(i))
+            action.toggled.connect(lambda checked, col=i: self.table.setColumnHidden(col, not checked))
+            menu.addAction(action)
+        menu.exec(self.btn_columns.mapToGlobal(QPoint(0, self.btn_columns.height())))
+
+    def _on_header_context_menu(self, pos: QPoint):
+        menu = QMenu(self)
+        menu.setStyleSheet("QMenu { padding: 6px; font-weight: 600; }")
+        for i, name in enumerate(self.COLUMN_HEADERS):
+            action = QAction(name, menu)
+            action.setCheckable(True)
+            action.setChecked(not self.table.isColumnHidden(i))
+            action.toggled.connect(lambda checked, col=i: self.table.setColumnHidden(col, not checked))
+            menu.addAction(action)
+        menu.exec(self.table.horizontalHeader().mapToGlobal(pos))
 
     def set_videos(self, videos: List[Dict[str, Any]]):
         self.raw_videos_data = videos
@@ -379,12 +415,29 @@ class DomainTableView(QWidget):
     """
     Paginated interactive table for discovered domains and Instagram handles.
     Features:
+    - Show/Hide Column Manager (Botão '👁️ Colunas' e menu contextual no cabeçalho).
     - Grouped by Domain: Shows exact count of videos where the domain appears.
     - Cumulative Daily Traffic Sum (Soma total do tráfego diário gerado em todos os vídeos associados).
     - Prioritizes AVAILABLE (🟢) domains/IGs on TOP with highest cumulative traffic.
     """
     buy_domain_requested = pyqtSignal(str)
     open_video_requested = pyqtSignal(str)
+
+    COLUMN_HEADERS = [
+        "Status",
+        "Tipo",
+        "Domínio / Conta IG",
+        "Vídeos Presente",
+        "Soma Tráfego Diário",
+        "Soma Views Totais",
+        "Vídeo Principal",
+        "Data de Envio",
+        "Views / Hora (Soma)",
+        "Views / Mês (Soma)",
+        "Views / Ano (Soma)",
+        "Detalhes / WHOIS",
+        "Ação de Compra / Claim"
+    ]
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -405,7 +458,7 @@ class DomainTableView(QWidget):
 
         # 1. Top Filters & Search Toolbar
         toolbar = QHBoxLayout()
-        toolbar.setSpacing(12)
+        toolbar.setSpacing(10)
 
         toolbar.addWidget(QLabel("Filtrar por Status:"))
         self.combo_filter = QComboBox()
@@ -419,36 +472,33 @@ class DomainTableView(QWidget):
 
         toolbar.addStretch()
 
+        # Column Visibility Selector Button
+        self.btn_columns = QPushButton("👁️ Colunas")
+        self.btn_columns.setObjectName("btn_table_action")
+        self.btn_columns.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.btn_columns.setToolTip("Exibir ou ocultar colunas da tabela")
+        self.btn_columns.clicked.connect(self._show_column_menu)
+        toolbar.addWidget(self.btn_columns)
+
         self.input_search = QLineEdit()
-        self.input_search.setPlaceholderText("🔍 Buscar domínio, extensão ou termo...")
-        self.input_search.setFixedWidth(260)
+        self.input_search.setPlaceholderText("🔍 Buscar domínio ou termo...")
+        self.input_search.setFixedWidth(220)
         self.input_search.textChanged.connect(self._on_search_changed)
         toolbar.addWidget(self.input_search)
 
         layout.addLayout(toolbar)
 
-        # 2. Main Domain Table (13 Columns with Video Count & Cumulative Traffic)
+        # 2. Main Domain Table
         self.table = QTableWidget()
-        self.table.setColumnCount(13)
-        self.table.setHorizontalHeaderLabels([
-            "Status",
-            "Tipo",
-            "Domínio / Conta IG",
-            "Vídeos Presente",
-            "Soma Tráfego Diário",
-            "Soma Views Totais",
-            "Vídeo Principal",
-            "Data de Envio",
-            "Views / Hora (Soma)",
-            "Views / Mês (Soma)",
-            "Views / Ano (Soma)",
-            "Detalhes / WHOIS",
-            "Ação de Compra / Claim"
-        ])
+        self.table.setColumnCount(len(self.COLUMN_HEADERS))
+        self.table.setHorizontalHeaderLabels(self.COLUMN_HEADERS)
 
         header = self.table.horizontalHeader()
         header.setSectionsMovable(True)
-        for i in range(13):
+        header.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        header.customContextMenuRequested.connect(self._on_header_context_menu)
+
+        for i in range(len(self.COLUMN_HEADERS)):
             header.setSectionResizeMode(i, QHeaderView.ResizeMode.Interactive)
 
         self.table.verticalHeader().setDefaultSectionSize(48)
@@ -456,20 +506,20 @@ class DomainTableView(QWidget):
         self.table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         self.table.verticalHeader().setSectionsMovable(True)
 
-        # Generous default widths
-        self.table.setColumnWidth(0, 140)  # Status
+        # Optimized default widths
+        self.table.setColumnWidth(0, 130)  # Status
         self.table.setColumnWidth(1, 110)  # Tipo
-        self.table.setColumnWidth(2, 220)  # Domínio / IG
-        self.table.setColumnWidth(3, 130)  # Vídeos Presente
-        self.table.setColumnWidth(4, 155)  # Soma Tráfego Diário
-        self.table.setColumnWidth(5, 140)  # Soma Views Totais
+        self.table.setColumnWidth(2, 210)  # Domínio / IG
+        self.table.setColumnWidth(3, 125)  # Vídeos Presente
+        self.table.setColumnWidth(4, 160)  # Soma Tráfego Diário
+        self.table.setColumnWidth(5, 135)  # Soma Views Totais
         self.table.setColumnWidth(6, 260)  # Vídeo Principal
         self.table.setColumnWidth(7, 115)  # Data de Envio
-        self.table.setColumnWidth(8, 120)  # Views/Hora
-        self.table.setColumnWidth(9, 120)  # Views/Mês
-        self.table.setColumnWidth(10, 120) # Views/Ano
-        self.table.setColumnWidth(11, 230) # Detalhes
-        self.table.setColumnWidth(12, 160) # Ação
+        self.table.setColumnWidth(8, 110)  # Views/Hora
+        self.table.setColumnWidth(9, 110)  # Views/Mês
+        self.table.setColumnWidth(10, 110) # Views/Ano
+        self.table.setColumnWidth(11, 220) # Detalhes
+        self.table.setColumnWidth(12, 175) # Ação
 
         self.table.setAlternatingRowColors(True)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
@@ -512,6 +562,28 @@ class DomainTableView(QWidget):
         p_layout.addWidget(self.combo_page_size)
 
         layout.addWidget(self.pagination_frame)
+
+    def _show_column_menu(self):
+        menu = QMenu(self)
+        menu.setStyleSheet("QMenu { padding: 6px; font-weight: 600; }")
+        for i, name in enumerate(self.COLUMN_HEADERS):
+            action = QAction(name, menu)
+            action.setCheckable(True)
+            action.setChecked(not self.table.isColumnHidden(i))
+            action.toggled.connect(lambda checked, col=i: self.table.setColumnHidden(col, not checked))
+            menu.addAction(action)
+        menu.exec(self.btn_columns.mapToGlobal(QPoint(0, self.btn_columns.height())))
+
+    def _on_header_context_menu(self, pos: QPoint):
+        menu = QMenu(self)
+        menu.setStyleSheet("QMenu { padding: 6px; font-weight: 600; }")
+        for i, name in enumerate(self.COLUMN_HEADERS):
+            action = QAction(name, menu)
+            action.setCheckable(True)
+            action.setChecked(not self.table.isColumnHidden(i))
+            action.toggled.connect(lambda checked, col=i: self.table.setColumnHidden(col, not checked))
+            menu.addAction(action)
+        menu.exec(self.table.horizontalHeader().mapToGlobal(pos))
 
     def set_domains(self, domains: List[Dict[str, Any]]):
         """Aggregate occurrences of the same domain across multiple videos and calculate cumulative traffic."""
@@ -755,7 +827,7 @@ class DomainTableView(QWidget):
             details_item.setToolTip(f"Origem(ns): {src_label}\n{raw_details}")
             self.table.setItem(row, 11, details_item)
 
-            # 12. Action Button
+            # 12. Action Buttons Widget
             action_widget = QWidget()
             action_layout = QHBoxLayout(action_widget)
             action_layout.setContentsMargins(6, 4, 6, 4)
@@ -774,8 +846,17 @@ class DomainTableView(QWidget):
             if buy_link and status == "Disponível":
                 btn_buy = QPushButton(f"🛒 Registrar ({reg_name})")
                 btn_buy.setObjectName("btn_table_buy")
+                btn_buy.setToolTip("Abrir no navegador padrão para comprar/registrar este domínio")
                 btn_buy.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
                 btn_buy.clicked.connect(lambda _, l=buy_link: self.buy_domain_requested.emit(l))
+                action_layout.addWidget(btn_buy)
+            elif is_ig and status == "Disponível":
+                ig_url = f"https://www.instagram.com/{display_name.replace('@', '')}"
+                btn_buy = QPushButton("📸 Reivindicar IG")
+                btn_buy.setObjectName("btn_table_buy")
+                btn_buy.setToolTip("Abrir no navegador padrão para verificar/reivindicar usuário do Instagram")
+                btn_buy.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+                btn_buy.clicked.connect(lambda _, l=ig_url: self.buy_domain_requested.emit(l))
                 action_layout.addWidget(btn_buy)
 
             self.table.setCellWidget(row, 12, action_widget)

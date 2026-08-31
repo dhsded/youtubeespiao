@@ -364,5 +364,27 @@ class TestYoutubeEspiaoCore(unittest.TestCase):
         res_google = validator.validate_domain("google.com")
         self.assertEqual(res_google["status"], "Ativo")
 
+    def test_column_visibility_toggle(self):
+        """Test column visibility toggling on VideoTableView and DomainTableView."""
+        from PyQt6.QtWidgets import QApplication
+        import sys
+        app = QApplication.instance() or QApplication(sys.argv)
+        from ui.video_table_model import VideoTableView, DomainTableView
+        
+        v_table = VideoTableView()
+        d_table = DomainTableView()
+        
+        self.assertFalse(v_table.table.isColumnHidden(0))
+        v_table.table.setColumnHidden(0, True)
+        self.assertTrue(v_table.table.isColumnHidden(0))
+        v_table.table.setColumnHidden(0, False)
+        self.assertFalse(v_table.table.isColumnHidden(0))
+        
+        self.assertFalse(d_table.table.isColumnHidden(3))
+        d_table.table.setColumnHidden(3, True)
+        self.assertTrue(d_table.table.isColumnHidden(3))
+        d_table.table.setColumnHidden(3, False)
+        self.assertFalse(d_table.table.isColumnHidden(3))
+
 if __name__ == "__main__":
     unittest.main()

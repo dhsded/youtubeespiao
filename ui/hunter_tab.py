@@ -281,7 +281,7 @@ class HunterTab(QWidget):
         domain_layout.setSpacing(10)
 
         self.domain_table = DomainTableView()
-        self.domain_table.buy_domain_requested.connect(self._on_navigate_requested)
+        self.domain_table.buy_domain_requested.connect(self._on_buy_domain_requested)
         self.domain_table.open_video_requested.connect(self._on_navigate_requested)
         domain_layout.addWidget(self.domain_table)
 
@@ -775,6 +775,12 @@ class HunterTab(QWidget):
 
     def _on_navigate_requested(self, url: str):
         self.navigate_url_requested.emit(url)
+
+    def _on_buy_domain_requested(self, url: str):
+        """Open domain registration or Instagram claim URL directly in user's default external browser."""
+        from PyQt6.QtGui import QDesktopServices
+        from PyQt6.QtCore import QUrl
+        QDesktopServices.openUrl(QUrl(url))
 
     def _clear_results(self):
         self.all_videos.clear()
