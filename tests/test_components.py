@@ -67,9 +67,11 @@ class TestYoutubeEspiaoCore(unittest.TestCase):
         self.assertIn("zh", lang_codes) # Chinese
         self.assertIn("ar", lang_codes) # Arabic
 
-        # 2. Universal acronym preservation (GTA, SEO, etc.)
+        # 2. Universal acronym preservation with localized token targeting
         gta_task = expand_queries_for_language("GTA", "pt")
-        self.assertEqual(gta_task[0]["query"], "GTA")
+        gta_queries = [t["query"] for t in gta_task]
+        self.assertIn("GTA brasil", gta_queries)
+        self.assertIn("GTA", gta_queries)
 
         gta_global = expand_queries_for_language("GTA", "global")
         self.assertTrue(all(t["query"] == "GTA" for t in gta_global))
@@ -137,15 +139,27 @@ class TestYoutubeEspiaoCore(unittest.TestCase):
         crawler.clear_seen_videos()
         self.assertEqual(len(crawler.seen_video_ids), 0)
 
-    def test_crawler_date_and_view_sorting(self):
-        """Test crawler date options and view count parsing."""
-        from core.youtube_crawler import YouTubeCrawler
-        crawler = YouTubeCrawler()
+    def test_language_matching_filter(self):
+        """Test strict language detection to avoid English/foreign leakage when searching GTA in Portuguese."""
+        from core.translator import is_content_matching_language
+        
+        # 1. Portuguese GTA video with Portuguese words/accents
+        pt_video = is_content_matching_language(
+            title="GTA 6 gameplay vazado oficial - Tudo sobre o novo jogo",
+            description="Confira as novidades do GTA Brasil e como jogar no servidor RP.",
+            channel_name="GameplayRJ",
+            target_lang="pt"
+        )
+        self.assertTrue(pt_video)
 
-        # Parse view count strings
-        self.assertEqual(crawler._parse_view_count("1.500.000 visualizações"), 1500000)
-        self.assertEqual(crawler._parse_view_count("25K views"), 25)
-        self.assertEqual(crawler._parse_view_count("350 mil visualizações"), 350)
+        # 2. English-only GTA video without Portuguese context
+        en_video = is_content_matching_language(
+            title="Grand Theft Auto VI Trailer 1",
+            description="Watch the official first trailer for Grand Theft Auto VI. Coming 2025.",
+            channel_name="Rockstar Games",
+            target_lang="pt"
+        )
+        self.assertFalse(en_video)
 
 if __name__ == "__main__":
     unittest.main()

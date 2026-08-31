@@ -1,15 +1,11 @@
 """
-YouTube Crawler and Harvester (24/7 Multi-Language & Date Range Engine).
+YouTube Crawler and Harvester (24/7 Multi-Language, Turbo Mode & Robust Language Filtering).
 Features:
 - Primary sorting by Views Count (Vídeos Mais Vistos).
-- Comprehensive Date Filtering: Global/All-Time, Specific Years (2025, 2024, etc.), Year Ranges, or YouTube intervals (This Year, This Month, Today).
-- Full regional targeting (hl/gl) and multi-language header emulation.
+- Robust Language Verification: Filters out foreign videos when a specific language (e.g. Portuguese) is chosen.
+- Turbo Search Mode (Ultra-Fast 0.3s processing) vs Safe Anti-Ban Mode.
+- Date Filtering: Global/All-Time, Specific Years, Year Ranges, and YouTube intervals.
 - Automatic Duplicate Elimination (Session-wide seen video cache).
-- Rotating modern User-Agents & realistic browser headers.
-- Adaptive human jitter & delay intervals (anti-fingerprint).
-- Automatic Exponential Backoff & 429 cooling-off recovery.
-- HTTP/SOCKS5 Proxy support for uninterrupted 24/7 mass scraping.
-- Periodic garbage collection and memory optimization.
 """
 
 import time
@@ -23,6 +19,7 @@ import yt_dlp
 from core.metrics_calculator import calculate_video_metrics
 from core.domain_extractor import DomainExtractor
 from core.domain_validator import DomainValidator
+from core.translator import is_content_matching_language
 
 logger = logging.getLogger(__name__)
 
@@ -42,13 +39,15 @@ class YouTubeCrawler:
         domain_validator: Optional[DomainValidator] = None,
         proxy_url: Optional[str] = None,
         min_delay: float = 1.0,
-        max_delay: float = 2.5
+        max_delay: float = 2.5,
+        fast_mode: bool = False
     ):
         self.extractor = domain_extractor or DomainExtractor()
         self.validator = domain_validator or DomainValidator()
         self.proxy_url = proxy_url.strip() if proxy_url else None
         self.min_delay = min_delay
         self.max_delay = max_delay
+        self.fast_mode = fast_mode
         self._is_stopped = False
         self.seen_video_ids: Set[str] = set()
         
@@ -62,7 +61,7 @@ class YouTubeCrawler:
             "get_comments": True,
             "extractor_args": {
                 "youtube": {
-                    "max_comments": ["5", "all", "5", "0"],
+                    "max_comments": ["2" if fast_mode else "5", "all", "2" if fast_mode else "5", "0"],
                     "comment_sort": ["top"]
                 }
             }
@@ -70,6 +69,10 @@ class YouTubeCrawler:
 
         if self.proxy_url:
             self.ydl_opts["proxy"] = self.proxy_url
+
+    def set_fast_mode(self, fast: bool):
+        self.fast_mode = fast
+        self.ydl_opts["extractor_args"]["youtube"]["max_comments"] = ["2" if fast else "5", "all", "2" if fast else "5", "0"]
 
     def stop(self):
         """Signal the crawler to stop execution gracefully."""
@@ -82,12 +85,15 @@ class YouTubeCrawler:
     def _sleep_jitter(self, multiplier: float = 1.0):
         if self._is_stopped:
             return
-        delay = random.uniform(self.min_delay, self.max_delay) * multiplier
-        steps = max(1, int(delay / 0.2))
+        if self.fast_mode:
+            delay = random.uniform(0.1, 0.35) * multiplier
+        else:
+            delay = random.uniform(self.min_delay, self.max_delay) * multiplier
+        steps = max(1, int(delay / 0.1))
         for _ in range(steps):
             if self._is_stopped:
                 break
-            time.sleep(0.2)
+            time.sleep(0.1)
 
     def _get_random_user_agent(self) -> str:
         return random.choice(USER_AGENTS_POOL)
@@ -112,7 +118,6 @@ class YouTubeCrawler:
                 "sort_by": sort_by
             }
             if upload_date and upload_date not in ("all_time", "custom_range"):
-                # scrapetube supports: 'today', 'this_week', 'this_month', 'this_year'
                 if upload_date in ("today", "this_week", "this_month", "this_year"):
                     kwargs["upload_date"] = upload_date
 
@@ -159,7 +164,7 @@ class YouTubeCrawler:
 
         return results
 
-    def get_video_deep_details(self, video_url: str, hl: str = "pt", gl: str = "BR", retries: int = 2) -> Dict[str, Any]:
+    def get_video_deep_details(self, video_url: str, hl: str = "pt", gl: str = "BR", retries: int = 1) -> Dict[str, Any]:
         """
         Fetch video metadata & comments with automatic retry and backoff.
         """
@@ -213,18 +218,19 @@ class YouTubeCrawler:
             except Exception as e:
                 err_str = str(e).lower()
                 if "429" in err_str or "too many requests" in err_str or "captcha" in err_str:
-                    cool_off = (attempt + 1) * 15
+                    cool_off = (attempt + 1) * 10
                     logger.warning(f"Rate limit detected. Cooling off for {cool_off}s...")
                     time.sleep(cool_off)
                 else:
                     logger.debug(f"yt-dlp extract error for {video_url}: {e}")
-                    time.sleep(1.0)
+                    time.sleep(0.3)
 
         return info
 
     def process_keyword(
         self,
         keyword: str,
+        target_lang: str = "pt",
         max_videos: int = 15,
         sort_by: str = "view_count",
         date_filter: str = "all_time",
@@ -238,7 +244,7 @@ class YouTubeCrawler:
         on_progress: Optional[Callable[[int, int, str], None]] = None
     ) -> Dict[str, Any]:
         """
-        Processes a keyword prioritized by views, supporting specific years, year ranges, and date filters.
+        Processes a keyword prioritized by views with robust language validation.
         """
         self._is_stopped = False
         
@@ -248,9 +254,8 @@ class YouTubeCrawler:
 
         initial_videos = []
 
-        # 1. Check if user specified a specific year (e.g. 2024, 2023) or year range (e.g. 2020..2024)
+        # 1. Check if user specified a specific year (e.g. 2024) or year range (e.g. 2020..2026)
         if date_filter.isdigit():
-            # Specific year query
             year_val = date_filter
             search_term = f"{keyword} {year_val}"
             initial_videos = self.search_videos(
@@ -263,7 +268,7 @@ class YouTubeCrawler:
         elif date_filter == "custom_range" and year_range:
             start_yr, end_yr = year_range
             per_year_limit = max(5, int(max_videos / max(1, (end_yr - start_yr + 1))))
-            for yr in range(end_yr, start_yr - 1, -1): # Most recent years first
+            for yr in range(end_yr, start_yr - 1, -1):
                 if self._is_stopped:
                     break
                 yr_videos = self.search_videos(
@@ -275,7 +280,6 @@ class YouTubeCrawler:
                 )
                 initial_videos.extend(yr_videos)
         else:
-            # YouTube date filter (all_time, this_year, this_month, today, etc.)
             initial_videos = self.search_videos(
                 keyword,
                 max_results=max_videos,
@@ -314,6 +318,20 @@ class YouTubeCrawler:
             view_count = deep_info["view_count"] or v_item["initial_view_count"]
             description = deep_info["description"]
             pinned_comment = deep_info["pinned_comment"]
+            top_comments = deep_info.get("top_comments", [])
+
+            # Robust Language Verification: Filter out foreign content when a specific language is selected
+            if target_lang and target_lang not in ("global", "auto", "en"):
+                comments_text_sample = " ".join(top_comments[:3])
+                if not is_content_matching_language(
+                    title=title,
+                    description=description,
+                    channel_name=channel,
+                    target_lang=target_lang,
+                    comments_sample=comments_text_sample
+                ):
+                    # Video has no context in target language, skip
+                    continue
 
             # Calculate views metrics (hourly, daily, monthly, yearly)
             metrics = calculate_video_metrics(
@@ -325,7 +343,7 @@ class YouTubeCrawler:
             # Extract domains and Instagrams from Description and Comments
             desc_domains = self.extractor.process_text_for_domains(description, source_location="Descrição")
             pinned_domains = self.extractor.process_text_for_domains(pinned_comment, source_location="Comentário Fixado")
-            comments_text = " ".join(deep_info.get("top_comments", []))
+            comments_text = " ".join(top_comments)
             other_comment_domains = self.extractor.process_text_for_domains(comments_text, source_location="Comentários")
 
             combined_extracted_domains = desc_domains + pinned_domains + other_comment_domains

@@ -2,8 +2,10 @@
 Hunter Panel (Painel Espião) - Core mining, domain & Instagram analysis interface.
 Features:
 - Prioritization by View Count (Vídeos Mais Vistos).
-- Date & Year Range Filters (Global / Sem ano definido, Ano Específico, Intervalo de Anos, Recentes).
-- Global Multi-Language Search (12+ languages translated automatically).
+- Robust Language Verification (Zero foreign leakage on universal acronyms like GTA).
+- Real-time Telemetry HUD: Elapsed Time Counter (decrescido/decorrido), Average speed per video, Estimated time remaining.
+- Turbo Ultra-Fast Mode vs Safe Anti-Ban Mode.
+- Date & Year Range Filters (Global, Specific Years, Year Ranges, Recents).
 - Clean Dark/Light theme adaptability.
 """
 
@@ -16,7 +18,7 @@ from PyQt6.QtWidgets import (
     QTabWidget, QPlainTextEdit, QFrame, QFileDialog, QMessageBox,
     QCheckBox
 )
-from PyQt6.QtCore import Qt, QThread, pyqtSignal
+from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer
 from PyQt6.QtGui import QFont, QCursor
 
 from core.youtube_crawler import YouTubeCrawler
@@ -27,7 +29,7 @@ from ui.video_table_model import VideoTableView, DomainTableView
 from ui.settings_tab import APP_SETTINGS
 
 class CrawlerThread(QThread):
-    """Background worker thread supporting Multi-Language, Date Filters, and Global search."""
+    """Background worker thread supporting Multi-Language, Date Filters, Turbo Mode & Telemetry."""
     video_found = pyqtSignal(dict)
     domain_found = pyqtSignal(dict)
     progress_updated = pyqtSignal(int, int, str)
@@ -42,6 +44,7 @@ class CrawlerThread(QThread):
         year_range: Optional[Tuple[int, int]],
         max_videos: int,
         sort_by: str = "view_count",
+        fast_mode: bool = True,
         loop_24h: bool = False,
         parent=None
     ):
@@ -52,11 +55,13 @@ class CrawlerThread(QThread):
         self.year_range = year_range
         self.max_videos = max_videos
         self.sort_by = sort_by
+        self.fast_mode = fast_mode
         self.loop_24h = loop_24h
         self.crawler = YouTubeCrawler(
             proxy_url=APP_SETTINGS.get("proxy_url"),
-            min_delay=APP_SETTINGS.get("min_delay", 1.0),
-            max_delay=APP_SETTINGS.get("max_delay", 2.5)
+            min_delay=0.1 if fast_mode else APP_SETTINGS.get("min_delay", 1.0),
+            max_delay=0.35 if fast_mode else APP_SETTINGS.get("max_delay", 2.5),
+            fast_mode=fast_mode
         )
         self._is_interrupted = False
         self._is_paused = False
@@ -114,6 +119,7 @@ class CrawlerThread(QThread):
 
                         results = self.crawler.process_keyword(
                             keyword=query,
+                            target_lang=self.selected_lang,
                             max_videos=self.max_videos,
                             sort_by=self.sort_by,
                             date_filter=self.date_filter,
@@ -131,17 +137,17 @@ class CrawlerThread(QThread):
                         total_avail_count += results.get("available_domains", 0)
 
                         if not self._is_interrupted and len(lang_tasks) > 1:
-                            time.sleep(2.0)
+                            time.sleep(0.8 if self.fast_mode else 2.0)
 
                     if not self._is_interrupted and len(self.keywords) > 1:
-                        time.sleep(2.5)
+                        time.sleep(1.0 if self.fast_mode else 2.5)
 
                 if not self.loop_24h or self._is_interrupted:
                     break
 
                 cycle += 1
-                self.progress_updated.emit(100, 100, f"Ciclo {cycle-1} concluído. Aguardando 15s antes do próximo ciclo...")
-                for _ in range(15):
+                self.progress_updated.emit(100, 100, f"Ciclo {cycle-1} concluído. Aguardando intervalo...")
+                for _ in range(10 if self.fast_mode else 15):
                     if self._is_interrupted:
                         break
                     self._wait_if_paused()
@@ -158,7 +164,7 @@ class CrawlerThread(QThread):
 
 
 class HunterTab(QWidget):
-    """Main Hunting Dashboard with Multi-Language, Date Filters, and Theme Compatibility."""
+    """Main Hunting Dashboard with Multi-Language, Telemetry & Fast Search Mode."""
     navigate_url_requested = pyqtSignal(str)
 
     def __init__(self, parent=None):
@@ -168,6 +174,13 @@ class HunterTab(QWidget):
         
         self.all_videos: List[Dict[str, Any]] = []
         self.all_domains: List[Dict[str, Any]] = []
+
+        # Telemetry State
+        self.start_time: float = 0.0
+        self.target_video_count: int = 50
+        self.telemetry_timer = QTimer(self)
+        self.telemetry_timer.setInterval(500)
+        self.telemetry_timer.timeout.connect(self._update_telemetry)
 
         self._init_ui()
 
@@ -182,13 +195,21 @@ class HunterTab(QWidget):
         # 2. Controls Panel Container
         main_layout.addWidget(self._create_controls_panel())
 
-        # 3. Status Message & Progress Bar
+        # 3. Status Message, Telemetry HUD & Progress Bar
         status_bar_layout = QVBoxLayout()
         status_bar_layout.setSpacing(4)
 
+        status_header_layout = QHBoxLayout()
         self.status_label = QLabel("Pronto para iniciar a mineração. Digite termos e clique em 'Iniciar Busca'.")
         self.status_label.setObjectName("status_label")
-        status_bar_layout.addWidget(self.status_label)
+        status_header_layout.addWidget(self.status_label, 1)
+
+        # Real-time Telemetry HUD Label
+        self.lbl_telemetry = QLabel("⏱️ Tempo: 00:00  •  ⚡ Média: -- s/vídeo  •  ⏳ Restante: --")
+        self.lbl_telemetry.setStyleSheet("color: #38BDF8; font-weight: 700; font-size: 12px;")
+        status_header_layout.addWidget(self.lbl_telemetry)
+
+        status_bar_layout.addLayout(status_header_layout)
 
         self.progress_bar = QProgressBar()
         self.progress_bar.setFixedHeight(12)
@@ -372,6 +393,11 @@ class HunterTab(QWidget):
         self.chk_unlimited.toggled.connect(lambda checked: self.spin_max.setEnabled(not checked))
         row2.addWidget(self.chk_unlimited)
 
+        self.chk_fast_mode = QCheckBox("⚡ Modo Turbo")
+        self.chk_fast_mode.setChecked(True)
+        self.chk_fast_mode.setToolTip("Mineração ultra-rápida de vídeos (~0.4s por vídeo).")
+        row2.addWidget(self.chk_fast_mode)
+
         self.chk_mode_24h = QCheckBox("🔄 Modo 24h")
         self.chk_mode_24h.setToolTip("Executa em ciclos contínuos com pausas seguras anti-bloqueio.")
         row2.addWidget(self.chk_mode_24h)
@@ -409,6 +435,29 @@ class HunterTab(QWidget):
     def _on_date_filter_changed(self):
         code = self.combo_date.currentData()
         self.widget_custom_years.setVisible(code == "custom_range")
+
+    def _update_telemetry(self):
+        if self.start_time <= 0 or not self.crawler_thread or not self.crawler_thread.isRunning() or self.is_paused:
+            return
+
+        elapsed = time.time() - self.start_time
+        mins, secs = divmod(int(elapsed), 60)
+        time_str = f"{mins:02d}:{secs:02d}"
+
+        v_count = len(self.all_videos)
+        if v_count > 0:
+            avg_per_vid = elapsed / v_count
+            avg_str = f"{avg_per_vid:.1f}s/vídeo"
+
+            remaining_vids = max(0, self.target_video_count - v_count)
+            rem_sec = int(remaining_vids * avg_per_vid)
+            rem_mins, rem_s = divmod(rem_sec, 60)
+            rem_str = f"~{rem_mins:02d}:{rem_s:02d}" if rem_sec > 0 else "Finalizando..."
+        else:
+            avg_str = "-- s/vídeo"
+            rem_str = "Calculando..."
+
+        self.lbl_telemetry.setText(f"⏱️ Tempo: {time_str}  •  ⚡ Média: {avg_str}  •  ⏳ Restante: {rem_str}")
 
     def _create_bottom_toolbar(self) -> QHBoxLayout:
         layout = QHBoxLayout()
@@ -457,6 +506,7 @@ class HunterTab(QWidget):
             self.btn_pause.setText("⏸️ Pausar")
             self.status_label.setText("Mineração retomada...")
             self._append_log("▶ Mineração retomada.")
+            self.telemetry_timer.start()
             return
 
         raw_text = self.input_keyword.text().strip()
@@ -470,17 +520,22 @@ class HunterTab(QWidget):
         year_range = (self.spin_year_start.value(), self.spin_year_end.value()) if date_filter == "custom_range" else None
         max_vids = 5000 if self.chk_unlimited.isChecked() else self.spin_max.value()
         sort_by = self.combo_sort.currentData()
+        fast_mode = self.chk_fast_mode.isChecked()
         loop_24h = self.chk_mode_24h.isChecked()
 
         self.is_paused = False
+        self.start_time = time.time()
+        self.target_video_count = max_vids * len(keywords)
+        self.telemetry_timer.start()
+
         self.btn_start.setEnabled(False)
         self.btn_start.setText("🚀 Mineração Ativa")
         self.btn_pause.setEnabled(True)
         self.btn_pause.setText("⏸️ Pausar")
         self.btn_stop.setEnabled(True)
         self.progress_bar.setValue(0)
-        self.status_label.setText(f"Iniciando varredura por mais vistos ({self.combo_date.currentText()})...")
-        self._append_log(f"--- 🚀 Mineração Iniciada ({len(keywords)} termos | Período: {self.combo_date.currentText()} | Ordenação: {self.combo_sort.currentText()}) ---")
+        self.status_label.setText(f"Minerando vídeos mais vistos em {self.combo_lang.currentText()} (Turbo: {fast_mode})...")
+        self._append_log(f"--- 🚀 Mineração Iniciada ({len(keywords)} termos | Idioma: {self.combo_lang.currentText()} | Turbo: {fast_mode}) ---")
 
         self.crawler_thread = CrawlerThread(
             keywords=keywords,
@@ -489,6 +544,7 @@ class HunterTab(QWidget):
             year_range=year_range,
             max_videos=max_vids,
             sort_by=sort_by,
+            fast_mode=fast_mode,
             loop_24h=loop_24h,
             parent=self
         )
@@ -525,6 +581,7 @@ class HunterTab(QWidget):
             self.status_label.setText("Encerrando totalmente a varredura...")
             self._append_log("⏹️ Encerrando processo totalmente...")
             self.crawler_thread.stop()
+            self.telemetry_timer.stop()
             self.is_paused = False
             self.btn_start.setEnabled(True)
             self.btn_start.setText("🚀 Iniciar Busca")
@@ -536,7 +593,6 @@ class HunterTab(QWidget):
         if any(v.get("id") == v_id for v in self.all_videos):
             return
         self.all_videos.append(video_dict)
-        # Always prioritize highest views count first
         self.all_videos.sort(key=lambda x: x["metrics"]["view_count"], reverse=True)
         self.video_table.set_videos(self.all_videos)
         self._update_stat_cards()
@@ -567,13 +623,22 @@ class HunterTab(QWidget):
         self.btn_pause.setEnabled(False)
         self.btn_stop.setEnabled(False)
         self.is_paused = False
+        self.telemetry_timer.stop()
         self.progress_bar.setValue(100)
-        self.status_label.setText(f"Varredura concluída! {len(self.all_videos)} vídeos e {len(self.all_domains)} oportunidades analisadas.")
-        self._append_log(f"✅ Mineração finalizada! Disponíveis: {summary.get('available_domains', 0)} | Total: {summary.get('total_domains', 0)}")
+
+        elapsed = time.time() - self.start_time if self.start_time > 0 else 0
+        mins, secs = divmod(int(elapsed), 60)
+        time_str = f"{mins:02d}:{secs:02d}"
+        avg_str = f"{(elapsed / max(1, len(self.all_videos))):.1f}s/vídeo" if self.all_videos else "0s"
+
+        self.lbl_telemetry.setText(f"✅ Concluído em {time_str}  •  ⚡ Média: {avg_str}")
+        self.status_label.setText(f"Varredura concluída em {time_str}! {len(self.all_videos)} vídeos e {len(self.all_domains)} oportunidades.")
+        self._append_log(f"✅ Mineração finalizada ({time_str})! Disponíveis: {summary.get('available_domains', 0)} | Total: {summary.get('total_domains', 0)}")
         QMessageBox.information(
             self,
             "Mineração Concluída",
             f"Varredura finalizada com sucesso!\n\n"
+            f"• Tempo total: {time_str} (Média: {avg_str})\n"
             f"• Vídeos analisados: {len(self.all_videos)}\n"
             f"• Domínios / Contas IG encontradas: {len(self.all_domains)}\n"
             f"• Oportunidades DISPONÍVEIS para compra/claim: {summary.get('available_domains', 0)}"
@@ -585,6 +650,7 @@ class HunterTab(QWidget):
         self.btn_pause.setEnabled(False)
         self.btn_stop.setEnabled(False)
         self.is_paused = False
+        self.telemetry_timer.stop()
         self.status_label.setText(f"Erro: {err_msg}")
         self._append_log(f"❌ Erro na varredura: {err_msg}")
         QMessageBox.critical(self, "Erro na Varredura", f"Ocorreu um erro:\n{err_msg}")
@@ -615,6 +681,7 @@ class HunterTab(QWidget):
             self.crawler_thread.crawler.clear_seen_videos()
         self.log_view.clear()
         self.progress_bar.setValue(0)
+        self.lbl_telemetry.setText("⏱️ Tempo: 00:00  •  ⚡ Média: -- s/vídeo  •  ⏳ Restante: --")
         self._update_stat_cards()
         self.status_label.setText("Resultados limpos.")
 

@@ -1,7 +1,8 @@
 """
-Multi-Language Translation & Region Harvester Helper.
+Multi-Language Translation & Robust Language Filtering Engine.
 Supports 12+ major languages, regional parameters (hl/gl),
-preserves acronyms, brands, proper nouns, and handles mixed long-tail keyword queries.
+preserves acronyms (e.g., GTA, SEO), expands with localized search markers,
+and verifies that mined video content belongs to the chosen target language.
 """
 
 import re
@@ -12,7 +13,6 @@ import requests
 
 logger = logging.getLogger(__name__)
 
-# Common acronyms, tech terms, games, and universal brands that should NEVER be translated
 UNIVERSAL_TERMS: Set[str] = {
     "gta", "gta 5", "gta 6", "gta rp", "minecraft", "roblox", "fortnite", "valorant",
     "cod", "warzone", "fifa", "ea fc", "csgo", "cs2", "lol", "dota",
@@ -20,6 +20,29 @@ UNIVERSAL_TERMS: Set[str] = {
     "ia", "ai", "chatgpt", "midjourney", "gemini", "python", "javascript", "react",
     "crypto", "bitcoin", "btc", "ethereum", "eth", "nft", "forex", "trading",
     "iphone", "android", "ios", "windows", "mac", "pc", "playstation", "ps5", "xbox"
+}
+
+# Portuguese specific stopwords and markers
+PT_STOPWORDS = {
+    "de", "da", "do", "dos", "das", "em", "no", "na", "nos", "nas",
+    "para", "pra", "com", "como", "por", "que", "este", "esta", "seu", "sua",
+    "meu", "minha", "você", "voce", "vc", "um", "uma", "uns", "umas", "mais",
+    "muito", "bem", "bom", "sobre", "novo", "nova", "hoje", "tudo", "onde",
+    "aqui", "canal", "vídeo", "video", "jogos", "jogo", "gameplay", "brasil",
+    "brasileiro", "brasileira", "português", "portugues", "pt-br", "pt", "br",
+    "dublado", "legendado", "tutorial", "dicas", "como jogar", "jogando",
+    "análise", "analise", "história", "historia", "mod", "servidor", "rp",
+    "vida real", "dinheiro", "curso", "grátis", "gratis", "passo a passo",
+    "iniciantes", "completo", "segredos", "melhores", "fazer", "ganhar"
+}
+
+ES_STOPWORDS = {
+    "el", "la", "los", "las", "un", "una", "unos", "unas", "de", "del",
+    "en", "para", "por", "con", "como", "que", "este", "esta", "su", "mi",
+    "tu", "usted", "más", "muy", "bien", "sobre", "nuevo", "nueva", "hoy",
+    "todo", "donde", "aquí", "canal", "vídeo", "video", "juegos", "juego",
+    "gameplay", "españa", "español", "espanol", "castellano", "tutorial",
+    "consejos", "cómo jugar", "jugando", "análisis", "historia", "dinero", "gratis"
 }
 
 AVAILABLE_LANGUAGES: Dict[str, Dict[str, str]] = {
@@ -136,7 +159,6 @@ def is_universal_acronym(text: str) -> bool:
     clean = text.strip().lower()
     if clean in UNIVERSAL_TERMS:
         return True
-    # Acronyms in all-caps (e.g. GTA, SEO, VSL, UFC, WWE)
     if text.isupper() and len(text) <= 5:
         return True
     return False
@@ -164,7 +186,6 @@ def translate_query(text: str, target_lang: str) -> str:
     if not text or target_lang in ("global", "auto", "pt"):
         return text
 
-    # If it's a known universal term or short uppercase acronym (e.g., 'GTA', 'SEO'), don't translate
     if is_universal_acronym(text):
         return text
 
@@ -192,11 +213,9 @@ def translate_query(text: str, target_lang: str) -> str:
 
 def expand_queries_for_language(keyword: str, language_code: str) -> List[Dict[str, str]]:
     """
-    Generate non-restrictive search tasks.
-    - If 'global': Expands into all 12 major languages.
-    - If specific language (e.g., 'pt', 'es', 'en'):
-      Maintains user's exact long-tail keywords, preserves acronyms (e.g., 'GTA', 'GTA RP'),
-      and avoids destructive translations.
+    Generate localized search queries.
+    If the term is an acronym like 'GTA' in Portuguese, also queries localized variations
+    (e.g., 'GTA brasil', 'GTA portugues', 'GTA') to ensure YouTube targets Portuguese content.
     """
     keyword = keyword.strip()
     if not keyword:
@@ -206,7 +225,6 @@ def expand_queries_for_language(keyword: str, language_code: str) -> List[Dict[s
         tasks = []
         for l_code in GLOBAL_EXPANSION_LANGS:
             info = AVAILABLE_LANGUAGES.get(l_code, {})
-            # If keyword is universal acronym (like GTA), keep it as GTA in all regions
             translated = keyword if is_universal_acronym(keyword) else translate_query(keyword, l_code)
             tasks.append({
                 "query": translated,
@@ -220,11 +238,39 @@ def expand_queries_for_language(keyword: str, language_code: str) -> List[Dict[s
         return tasks
     else:
         info = AVAILABLE_LANGUAGES.get(language_code, AVAILABLE_LANGUAGES["pt"])
-        
-        # In specific language mode:
-        # If language is Portuguese or the keyword is long-tail or acronym, keep exact user query
-        if language_code == "pt" or is_universal_acronym(keyword):
-            target_query = keyword
+        tasks = []
+
+        if language_code == "pt":
+            # For short acronyms in Portuguese (e.g. GTA, SEO, PLR), query with localized tokens
+            if is_universal_acronym(keyword) and len(keyword.split()) <= 2:
+                for q_variant in [f"{keyword} brasil", f"{keyword} portugues", keyword]:
+                    tasks.append({
+                        "query": q_variant,
+                        "original_keyword": keyword,
+                        "lang_code": "pt",
+                        "lang_name": info.get("name", "Português (Brasil)"),
+                        "flag": info.get("flag", "🇧🇷"),
+                        "hl": "pt",
+                        "gl": "BR"
+                    })
+                return tasks
+            else:
+                target_query = keyword
+        elif language_code == "es":
+            if is_universal_acronym(keyword) and len(keyword.split()) <= 2:
+                for q_variant in [f"{keyword} español", f"{keyword} espana", keyword]:
+                    tasks.append({
+                        "query": q_variant,
+                        "original_keyword": keyword,
+                        "lang_code": "es",
+                        "lang_name": info.get("name", "Espanhol"),
+                        "flag": info.get("flag", "🇪🇸"),
+                        "hl": "es",
+                        "gl": "ES"
+                    })
+                return tasks
+            else:
+                target_query = translate_query(keyword, "es")
         else:
             target_query = translate_query(keyword, language_code)
 
@@ -237,3 +283,60 @@ def expand_queries_for_language(keyword: str, language_code: str) -> List[Dict[s
             "hl": info.get("hl", "pt"),
             "gl": info.get("gl", "BR")
         }]
+
+
+def is_content_matching_language(
+    title: str,
+    description: str,
+    channel_name: str,
+    target_lang: str,
+    comments_sample: str = ""
+) -> bool:
+    """
+    Validate if a video's content belongs to the selected language.
+    Prevents foreign language leakage when searching universal acronyms like 'GTA'.
+    """
+    if not target_lang or target_lang in ("global", "auto", "en"):
+        return True
+
+    full_text = f"{title} {description} {channel_name} {comments_sample}".lower()
+
+    if target_lang == "pt":
+        # Check Portuguese characters / diacritics
+        if re.search(r"[áéíóúâêôãõçà]", full_text):
+            return True
+        # Check Portuguese keywords and stopwords
+        words = set(re.findall(r"\b\w+\b", full_text))
+        matched = words.intersection(PT_STOPWORDS)
+        if len(matched) >= 1:
+            return True
+        return False
+
+    elif target_lang == "es":
+        if re.search(r"[áéíóúñ¿¡]", full_text):
+            return True
+        words = set(re.findall(r"\b\w+\b", full_text))
+        matched = words.intersection(ES_STOPWORDS)
+        if len(matched) >= 1:
+            return True
+        return False
+
+    elif target_lang == "ru":
+        return bool(re.search(r"[\u0400-\u04FF]", full_text))
+
+    elif target_lang == "ja":
+        return bool(re.search(r"[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff]", full_text))
+
+    elif target_lang == "zh":
+        return bool(re.search(r"[\u4e00-\u9fff]", full_text))
+
+    elif target_lang == "ar":
+        return bool(re.search(r"[\u0600-\u06ff]", full_text))
+
+    elif target_lang == "ko":
+        return bool(re.search(r"[\uac00-\ud7af]", full_text))
+
+    elif target_lang == "hi":
+        return bool(re.search(r"[\u0900-\u097f]", full_text))
+
+    return True
