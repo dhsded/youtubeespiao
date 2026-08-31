@@ -1,7 +1,10 @@
 """
 Integrated Chromium Web Browser Component.
-Provides real-time live preview of videos being analyzed during mining,
-with quick navigation, address bar, and direct access to domain registrars.
+Features:
+- Real-time live preview of videos being analyzed during mining.
+- Zoom controls (🔍+, 🔍-, 100% Reset) with high-DPI scaling to prevent cramped YouTube UI.
+- Address bar with quick links to Registro.br, Namecheap, and YouTube.
+- Dark and Light theme adaptability.
 """
 
 from PyQt6.QtWidgets import (
@@ -16,6 +19,7 @@ class BrowserView(QWidget):
     def __init__(self, default_url: str = "https://www.youtube.com", parent=None):
         super().__init__(parent)
         self.default_url = default_url
+        self.zoom_factor = 0.90  # Default spacious zoom to prevent squished layouts
         self._init_ui()
 
     def _init_ui(self):
@@ -25,6 +29,7 @@ class BrowserView(QWidget):
 
         # 1. Top Live Status Bar (Real-Time HUD)
         self.live_status_bar = QFrame()
+        self.live_status_bar.setObjectName("browser_live_bar")
         self.live_status_bar.setStyleSheet("background-color: #0F172A; border-bottom: 1px solid #222F44; padding: 4px 10px;")
         live_layout = QHBoxLayout(self.live_status_bar)
         live_layout.setContentsMargins(8, 2, 8, 2)
@@ -42,32 +47,33 @@ class BrowserView(QWidget):
 
         # 2. Navigation Bar
         self.toolbar_widget = QWidget()
+        self.toolbar_widget.setObjectName("browser_toolbar")
         self.toolbar_widget.setStyleSheet("background-color: #131B2A; border-bottom: 1px solid #222F44; padding: 6px;")
         nav_layout = QHBoxLayout(self.toolbar_widget)
         nav_layout.setContentsMargins(8, 4, 8, 4)
-        nav_layout.setSpacing(8)
+        nav_layout.setSpacing(6)
 
         # Nav Buttons
         self.btn_back = QPushButton("◀")
-        self.btn_back.setFixedWidth(34)
+        self.btn_back.setFixedWidth(32)
         self.btn_back.setToolTip("Voltar")
         self.btn_back.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.btn_back.clicked.connect(self._go_back)
 
         self.btn_forward = QPushButton("▶")
-        self.btn_forward.setFixedWidth(34)
+        self.btn_forward.setFixedWidth(32)
         self.btn_forward.setToolTip("Avançar")
         self.btn_forward.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.btn_forward.clicked.connect(self._go_forward)
 
         self.btn_reload = QPushButton("🔄")
-        self.btn_reload.setFixedWidth(34)
+        self.btn_reload.setFixedWidth(32)
         self.btn_reload.setToolTip("Recarregar Página")
         self.btn_reload.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.btn_reload.clicked.connect(self._reload_page)
 
         self.btn_home = QPushButton("🏠 YouTube")
-        self.btn_home.setToolTip("Ir para o YouTube")
+        self.btn_home.setToolTip("Ir para a página inicial do YouTube")
         self.btn_home.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.btn_home.clicked.connect(lambda: self.navigate_to("https://www.youtube.com"))
 
@@ -79,9 +85,28 @@ class BrowserView(QWidget):
 
         # Go Button
         self.btn_go = QPushButton("Ir")
-        self.btn_go.setFixedWidth(45)
+        self.btn_go.setFixedWidth(40)
         self.btn_go.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.btn_go.clicked.connect(self._on_url_entered)
+
+        # Zoom Controls
+        self.btn_zoom_out = QPushButton("🔍 -")
+        self.btn_zoom_out.setFixedWidth(36)
+        self.btn_zoom_out.setToolTip("Diminuir Zoom (Afastar visão)")
+        self.btn_zoom_out.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.btn_zoom_out.clicked.connect(self._zoom_out)
+
+        self.btn_zoom_reset = QPushButton("90%")
+        self.btn_zoom_reset.setFixedWidth(46)
+        self.btn_zoom_reset.setToolTip("Restaurar Zoom Padrão (100%)")
+        self.btn_zoom_reset.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.btn_zoom_reset.clicked.connect(self._zoom_reset)
+
+        self.btn_zoom_in = QPushButton("🔍 +")
+        self.btn_zoom_in.setFixedWidth(36)
+        self.btn_zoom_in.setToolTip("Aumentar Zoom (Aproximar)")
+        self.btn_zoom_in.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.btn_zoom_in.clicked.connect(self._zoom_in)
 
         # Quick Links
         self.btn_reg_br = QPushButton("🇧🇷 Registro.br")
@@ -100,6 +125,9 @@ class BrowserView(QWidget):
         nav_layout.addWidget(self.btn_home)
         nav_layout.addWidget(self.url_bar, 1)
         nav_layout.addWidget(self.btn_go)
+        nav_layout.addWidget(self.btn_zoom_out)
+        nav_layout.addWidget(self.btn_zoom_reset)
+        nav_layout.addWidget(self.btn_zoom_in)
         nav_layout.addWidget(self.btn_reg_br)
         nav_layout.addWidget(self.btn_namecheap)
 
@@ -123,6 +151,7 @@ class BrowserView(QWidget):
 
         # 4. WebEngine View (Chromium)
         self.web_view = QWebEngineView()
+        self.web_view.setZoomFactor(self.zoom_factor)
         self.web_view.urlChanged.connect(self._on_web_url_changed)
         self.web_view.loadStarted.connect(self._on_load_started)
         self.web_view.loadProgress.connect(self._on_load_progress)
@@ -132,6 +161,21 @@ class BrowserView(QWidget):
         # Load default
         self.navigate_to(self.default_url)
 
+    def _zoom_in(self):
+        self.zoom_factor = min(2.0, round(self.zoom_factor + 0.1, 2))
+        self.web_view.setZoomFactor(self.zoom_factor)
+        self.btn_zoom_reset.setText(f"{int(self.zoom_factor * 100)}%")
+
+    def _zoom_out(self):
+        self.zoom_factor = max(0.5, round(self.zoom_factor - 0.1, 2))
+        self.web_view.setZoomFactor(self.zoom_factor)
+        self.btn_zoom_reset.setText(f"{int(self.zoom_factor * 100)}%")
+
+    def _zoom_reset(self):
+        self.zoom_factor = 1.0 if self.zoom_factor != 1.0 else 0.90
+        self.web_view.setZoomFactor(self.zoom_factor)
+        self.btn_zoom_reset.setText(f"{int(self.zoom_factor * 100)}%")
+
     def set_live_video(self, url: str, title: str):
         """Update live status and load current analyzed video in real-time."""
         self.lbl_live_badge.setText("🔴 MINERANDO AO VIVO")
@@ -139,33 +183,29 @@ class BrowserView(QWidget):
         self.lbl_live_title.setText(f"Analisando: {title}")
         self.navigate_to(url)
 
-    def navigate_to(self, url_str: str):
-        """Navigate webview to specified URL with automatic protocol handling."""
-        if not url_str:
+    def navigate_to(self, url: str):
+        """Navigate to specified URL, automatically prepending protocol if missing."""
+        clean_url = url.strip()
+        if not clean_url:
             return
-        url_str = url_str.strip()
-        if not url_str.startswith("http://") and not url_str.startswith("https://"):
-            url_str = "https://" + url_str
-        self.url_bar.setText(url_str)
-        self.web_view.setUrl(QUrl(url_str))
+
+        if not (clean_url.startswith("http://") or clean_url.startswith("https://")):
+            if "." in clean_url and " " not in clean_url:
+                clean_url = "https://" + clean_url
+            else:
+                clean_url = f"https://www.google.com/search?q={clean_url}"
+
+        self.url_bar.setText(clean_url)
+        self.web_view.load(QUrl(clean_url))
 
     def _on_url_entered(self):
-        text = self.url_bar.text().strip()
-        if not text:
-            return
-        if "." not in text or " " in text:
-            search_url = f"https://www.youtube.com/results?search_query={text}"
-            self.navigate_to(search_url)
-        else:
-            self.navigate_to(text)
+        self.navigate_to(self.url_bar.text())
 
     def _go_back(self):
-        if self.web_view.history().canGoBack():
-            self.web_view.back()
+        self.web_view.back()
 
     def _go_forward(self):
-        if self.web_view.history().canGoForward():
-            self.web_view.forward()
+        self.web_view.forward()
 
     def _reload_page(self):
         self.web_view.reload()
@@ -174,7 +214,7 @@ class BrowserView(QWidget):
         self.url_bar.setText(qurl.toString())
 
     def _on_load_started(self):
-        self.progress_bar.setValue(10)
+        self.progress_bar.setValue(0)
         self.progress_bar.show()
 
     def _on_load_progress(self, progress: int):
@@ -182,3 +222,4 @@ class BrowserView(QWidget):
 
     def _on_load_finished(self, success: bool):
         self.progress_bar.hide()
+        self.web_view.setZoomFactor(self.zoom_factor)

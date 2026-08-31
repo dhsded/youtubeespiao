@@ -186,6 +186,48 @@ class TestYoutubeEspiaoCore(unittest.TestCase):
         )
         self.assertFalse(es_video3)
 
+        # 4. Specific Spanish gameplay titles with GTA / Brasil
+        es_video4 = is_content_matching_language(
+            title="Jugué GTA X y es un Completo Caos...",
+            description="Gameplay en espanol",
+            channel_name="Lechu",
+            target_lang="pt"
+        )
+        self.assertFalse(es_video4)
+
+        es_video5 = is_content_matching_language(
+            title="LA POLICÍA ME QUITÓ LA MOTO MÁS COSTOSA DE TODO ELITE AUTO BRASIL",
+            description="Gameplay en servidor de Brasil pero en espanol",
+            channel_name="LoopXP",
+            target_lang="pt"
+        )
+        self.assertFalse(es_video5)
+
+        es_video6 = is_content_matching_language(
+            title="ENCUENTRO Y TUNEO UN COCHE SECRETO ..",
+            description="Video de coches y secretos",
+            channel_name="Gamer",
+            target_lang="pt"
+        )
+        self.assertFalse(es_video6)
+
+        # 5. Legitimate Brazilian GTA videos (must be ACCEPTED for pt)
+        pt_video_br1 = is_content_matching_language(
+            title="O FILME - Jogando GTA 5 Como POLICIAL DO BRASIL!",
+            description="Jogando gta 5 vida real como policial no brasil",
+            channel_name="Jazzghost",
+            target_lang="pt"
+        )
+        self.assertTrue(pt_video_br1)
+
+        pt_video_br2 = is_content_matching_language(
+            title="TROCA DE TIROS + CONFRONTO NA FAVELA - BOPE PMCE GTA 5 POLICIAL",
+            description="Confronto na favela com bope",
+            channel_name="OLD BOB",
+            target_lang="pt"
+        )
+        self.assertTrue(pt_video_br2)
+
     def test_pinned_comment_link_extraction(self):
         """Test domain & Instagram extraction specifically from pinned comments."""
         from core.domain_extractor import DomainExtractor

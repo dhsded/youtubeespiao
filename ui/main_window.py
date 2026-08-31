@@ -1,14 +1,19 @@
 """
 Main Application Window.
-Integrates the Hunter Panel, Chromium Web Browser View, Settings, and Help Center with instant Dark/Light Mode switching.
+Features:
+- Hunter Panel, Chromium Web Browser View, Settings & Whitelist, and Didactic Help Center.
+- Instant Dark/Light Mode switching with 100% crystal-clear contrast.
+- System Tray Minimization: Allows the app to run seamlessly in the background with notifications.
 """
 
+import os
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QTabWidget, QLabel, QFrame, QPushButton, QApplication
+    QTabWidget, QLabel, QFrame, QPushButton, QApplication,
+    QSystemTrayIcon, QMenu
 )
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QFont, QCursor
+from PyQt6.QtCore import Qt, QEvent
+from PyQt6.QtGui import QFont, QCursor, QIcon, QAction
 
 from ui.styles import DARK_THEME, LIGHT_THEME
 from ui.hunter_tab import HunterTab
@@ -27,6 +32,7 @@ class MainWindow(QMainWindow):
         self.setStyleSheet(DARK_THEME)
 
         self._init_ui()
+        self._init_tray_icon()
 
     def _init_ui(self):
         central_widget = QWidget()
@@ -56,20 +62,6 @@ class MainWindow(QMainWindow):
         # Help Button (Top Right)
         self.btn_help = QPushButton("📖 AJUDA")
         self.btn_help.setObjectName("btn_help_action")
-        self.btn_help.setStyleSheet("""
-            QPushButton#btn_help_action {
-                background-color: #0284C7;
-                color: #FFFFFF;
-                font-weight: 800;
-                font-size: 12px;
-                padding: 6px 14px;
-                border-radius: 6px;
-                border: 1px solid #38BDF8;
-            }
-            QPushButton#btn_help_action:hover {
-                background-color: #0EA5E9;
-            }
-        """)
         self.btn_help.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.btn_help.setToolTip("Abrir manual didático explicando todas as fórmulas, métricas e validação de domínios livres.")
         self.btn_help.clicked.connect(self._open_help_dialog)
@@ -82,7 +74,7 @@ class MainWindow(QMainWindow):
         self.btn_theme.clicked.connect(self._toggle_theme)
         header_layout.addWidget(self.btn_theme)
 
-        lbl_version = QLabel("v1.4.0")
+        lbl_version = QLabel("v1.5.0")
         lbl_version.setObjectName("header_version")
         header_layout.addWidget(lbl_version)
 
@@ -109,9 +101,94 @@ class MainWindow(QMainWindow):
 
         main_layout.addWidget(self.main_tabs, 1)
 
+    def _init_tray_icon(self):
+        """Initialize System Tray Icon with background execution menu."""
+        self.tray_icon = QSystemTrayIcon(self)
+        
+        icon_path = "assets/icon.ico"
+        if os.path.exists(icon_path):
+            self.tray_icon.setIcon(QIcon(icon_path))
+        else:
+            self.tray_icon.setIcon(self.windowIcon())
+
+        tray_menu = QMenu()
+
+        action_restore = QAction("🎯 Abrir YouTube Espião", self)
+        action_restore.triggered.connect(self._restore_from_tray)
+        tray_menu.addAction(action_restore)
+
+        tray_menu.addSeparator()
+
+        action_start = QAction("🚀 Iniciar / Retomar Varredura", self)
+        action_start.triggered.connect(self.hunter_tab._on_start_or_resume)
+        tray_menu.addAction(action_start)
+
+        action_pause = QAction("⏸️ Pausar Varredura", self)
+        action_pause.triggered.connect(self.hunter_tab._on_toggle_pause)
+        tray_menu.addAction(action_pause)
+
+        action_stop = QAction("⏹ Parar Varredura", self)
+        action_stop.triggered.connect(self.hunter_tab._on_stop_completely)
+        tray_menu.addAction(action_stop)
+
+        tray_menu.addSeparator()
+
+        action_quit = QAction("❌ Sair do Aplicativo", self)
+        action_quit.triggered.connect(self._force_quit)
+        tray_menu.addAction(action_quit)
+
+        self.tray_icon.setContextMenu(tray_menu)
+        self.tray_icon.setToolTip("YouTube Espião & Hunter Browser — Executando em segundo plano")
+        self.tray_icon.activated.connect(self._on_tray_activated)
+        self.tray_icon.show()
+
+    def _on_tray_activated(self, reason):
+        if reason in (QSystemTrayIcon.ActivationReason.Trigger, QSystemTrayIcon.ActivationReason.DoubleClick):
+            self._restore_from_tray()
+
+    def _restore_from_tray(self):
+        self.showNormal()
+        self.activateWindow()
+        self.raise_()
+
+    def changeEvent(self, event):
+        if event.type() == QEvent.Type.WindowStateChange:
+            if self.isMinimized():
+                self.hide()
+                if self.tray_icon.isSystemTrayAvailable():
+                    self.tray_icon.showMessage(
+                        "YouTube Espião",
+                        "O programa continua executando em segundo plano na bandeja do sistema.",
+                        QSystemTrayIcon.MessageIcon.Information,
+                        2500
+                    )
+        super().changeEvent(event)
+
+    def closeEvent(self, event):
+        # If crawler is currently active, minimize to tray instead of closing abruptly
+        if self.hunter_tab.crawler_thread and self.hunter_tab.crawler_thread.isRunning():
+            event.ignore()
+            self.hide()
+            if self.tray_icon.isSystemTrayAvailable():
+                self.tray_icon.showMessage(
+                    "YouTube Espião",
+                    "Mineração ativa! O programa continua executando na bandeja do sistema.",
+                    QSystemTrayIcon.MessageIcon.Information,
+                    2500
+                )
+        else:
+            event.accept()
+
+    def _force_quit(self):
+        """Completely stop all workers and terminate the application."""
+        if self.hunter_tab.crawler_thread and self.hunter_tab.crawler_thread.isRunning():
+            self.hunter_tab.crawler_thread.stop()
+        self.tray_icon.hide()
+        QApplication.instance().quit()
+
     def _open_help_dialog(self):
-        """Open the Didactic Help & Methodology Dialog."""
-        dialog = HelpDialog(self)
+        """Open the Didactic Help & Methodology Dialog with current theme styling."""
+        dialog = HelpDialog(self, is_dark_mode=self.is_dark_mode)
         dialog.exec()
 
     def _toggle_theme(self):

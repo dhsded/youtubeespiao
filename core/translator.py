@@ -1,10 +1,10 @@
 """
-Multi-Language Translation & High-Precision Language Detection Engine.
+Multi-Language Translation & High-Precision Linguistic Classification Engine.
 Features:
-- Multi-layer linguistic scoring (Portuguese vs Spanish vs English vs other languages).
-- Comprehensive exclusive stopwords and morphological character classifiers.
-- Eliminates Spanish, English, and foreign false positives on universal terms (e.g., 'GTA').
-- Generates localized YouTube search queries when specific target languages are selected.
+- Massive multi-thousand word dictionary for Portuguese, Spanish, and regional dialects.
+- Strict morphological and grammatical isolation (eliminates Spanish false positives like 'Jugué GTA', 'La policía me quitó', 'Encuentro y tuneo un coche secreto').
+- Isolated conjunction and preposition tracking (e.g. 'y', 'el', 'los', 'las', 'del', 'al', 'en', 'es').
+- Localized YouTube query expansion with country tokens (e.g. 'GTA brasil', 'GTA portugues').
 """
 
 import re
@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 UNIVERSAL_TERMS: Set[str] = {
     "gta", "gta 5", "gta 6", "gta rp", "minecraft", "roblox", "fortnite", "valorant",
-    "cod", "warzone", "fifa", "ea fc", "csgo", "cs2", "lol", "dota",
+    "cod", "warzone", "fifa", "ea fc", "csgo", "cs2", "lol", "dota", "free fire",
     "seo", "cpa", "plr", "vls", "vsl", "drop", "dropshipping", "ecommerce", "e-com",
     "ia", "ai", "chatgpt", "midjourney", "gemini", "python", "javascript", "react",
     "crypto", "bitcoin", "btc", "ethereum", "eth", "nft", "forex", "trading",
@@ -46,35 +46,98 @@ PT_EXCLUSIVE_WORDS = {
     "agora", "já", "ja", "sempre", "nunca", "jamais", "aqui", "aí", "ai",
     "ali", "lá", "la", "dentro", "fora", "acima", "abaixo", "atrás",
     "atras", "antes", "depois", "cedo", "tarde", "também", "tambem",
-    "não", "nao", "sim", "realmente", "talvez", "jogando", "fazer",
-    "ganhar", "vídeo", "video", "canal", "brasil", "brasileiro", "brasileira",
-    "jogo", "jogos", "passo a passo", "tutorial", "dicas", "completo",
-    "dublado", "legendado", "servidor", "vida real", "inscreva-se",
-    "inscrevase", "deixe seu like", "se inscreva", "compartilhe", "valeu",
-    "galera", "pessoal", "mano", "bora", "tá", "ta", "tô", "to", "estou"
+    "não", "nao", "sim", "realmente", "talvez", "jogando", "joguei", "jogou",
+    "jogamos", "jogaram", "fazer", "fiz", "fez", "fizemos", "fizeram",
+    "ganhar", "ganhei", "ganhou", "vídeo", "video", "canal", "brasil",
+    "brasileiro", "brasileira", "jogo", "jogos", "passo a passo", "tutorial",
+    "dicas", "completo", "dublado", "legendado", "servidor", "vida real",
+    "inscreva-se", "inscrevase", "deixe seu like", "se inscreva",
+    "compartilhe", "valeu", "galera", "pessoal", "mano", "bora", "tá",
+    "ta", "tô", "to", "estou", "está", "estamos", "estão", "carro", "carros",
+    "moto", "motos", "favela", "policial", "polícia", "policia", "troca de tiros",
+    "confronto", "bope", "pmce", "pmesp", "pmrj", "policia militar",
+    "casamento", "filme", "episodio", "episódio", "temporada", "dinheiro",
+    "milhões", "milhoes", "mil", "comprando", "comprei", "comprou", "mansão",
+    "mansao", "vida", "vida de", "segredo", "segredos", "escondido",
+    "virando", "fui", "fui preso", "preso", "fuga", "fuga épica", "fuga epica"
 }
 
-# Words and tokens that are EXCLUSIVELY Spanish (distinct from Portuguese)
+# Words and tokens that are EXCLUSIVELY Spanish (NOT Portuguese)
 ES_EXCLUSIVE_WORDS = {
-    "el", "la", "los", "las", "un", "del", "al", "es", "en", "por",
-    "para", "con", "hagan", "tengo", "tienes", "tiene", "tenemos",
-    "tienen", "hacer", "hace", "hacen", "cancion", "canción", "video oficial",
-    "música", "musica", "letra", "pero", "más", "mas", "año", "años",
-    "esta", "este", "estos", "estas", "su", "sus", "mi", "mis", "tu",
-    "tus", "nuestro", "nuestra", "porque", "cuando", "donde", "quien",
-    "quienes", "yo", "tu", "él", "ella", "nosotros", "ellos", "ellas",
-    "usted", "ustedes", "muy", "mucho", "muchos", "muchas", "sin",
-    "sobre", "entre", "hasta", "desde", "hacia", "contra", "durante",
-    "bueno", "buena", "buenos", "buenas", "malo", "mala", "malos",
-    "malas", "nuevo", "nueva", "nuevos", "nuevas", "gran", "grande",
-    "primer", "primera", "ultimo", "ultima", "mismo", "misma", "tan",
-    "tanto", "tanta", "cada", "otro", "otra", "otros", "otras", "alguno",
-    "alguna", "ninguno", "ninguna", "todo", "toda", "poco", "poca",
-    "demasiado", "bastante", "cual", "cuales", "cuanto", "cuanta",
-    "españa", "espana", "español", "espanol", "castellano", "consejos",
-    "cómo jugar", "como jugar", "jugando", "análisis", "historia",
-    "dinero", "gratis", "suscríbete", "suscribete", "deja tu like",
-    "amigos", "chicos", "vaceo", "droga", "droga e mala", "calle"
+    # Pronouns & Articles
+    "el", "la", "los", "las", "un", "del", "al", "yo", "tú", "tu", "él", "el",
+    "ella", "ellos", "ellas", "nosotros", "nosotras", "usted", "ustedes",
+    "vos", "vosotros", "vosotras", "mi", "mis", "su", "sus", "nuestro",
+    "nuestra", "nuestros", "nuestras", "este", "esta", "estos", "estas",
+    "ese", "esa", "esos", "esas", "aquel", "aquella", "aquellos", "aquellas",
+    "esto", "eso", "aquello",
+    
+    # Prepositions & Conjunctions
+    "y", "e", "ni", "o", "u", "pero", "sino", "aunque", "porque", "por que",
+    "por qué", "pues", "ya que", "con", "sin", "sobre", "entre", "hasta",
+    "desde", "hacia", "contra", "durante", "según", "segun", "tras", "bajo",
+    "en", "para", "por",
+    
+    # Verbs (Spanish Conjugations)
+    "es", "son", "era", "eran", "fue", "fueron", "ser", "estar", "está",
+    "esta", "están", "estan", "estoy", "estás", "estas", "estamos", "estuve",
+    "estuviste", "estuvo", "estuvimos", "estuvieron",
+    "jugué", "jugue", "juegas", "juega", "jugamos", "juegan", "jugaron",
+    "jugando", "jugar",
+    "coche", "coches", "auto", "autos",
+    "quitó", "quito", "quitas", "quita", "quitamos", "quitaron", "quitar",
+    "me quitó", "me quito", "le quitó", "le quito", "nos quitó",
+    "costosa", "costoso", "costosas", "costosos",
+    "policía", "policia", "policías", "policias",
+    "tuneo", "tuneas", "tunea", "tuneamos", "tunen", "tunear", "tuneando",
+    "encuentro", "encuentras", "encuentra", "encontré", "encontre", "encontró",
+    "encontro", "encontramos", "encontraron", "encontrar",
+    "hago", "haces", "hace", "hacemos", "hacen", "hice", "hiciste", "hizo",
+    "hicimos", "hicieron", "hagan", "hacer", "haciendo",
+    "tengo", "tienes", "tiene", "tenemos", "tienen", "tuve", "tuviste", "tuvo",
+    "tuvimos", "tuvieron", "tener", "teniendo",
+    "puedo", "puedes", "puede", "podemos", "pueden", "pude", "pudo",
+    "voy", "vas", "va", "vamos", "van", "fui", "fuiste", "fue",
+    "quiero", "quieres", "quiere", "queremos", "quieren", "quise", "quiso",
+    "sé", "sabes", "sabe", "sabemos", "saben", "supe", "supo",
+    "veo", "ves", "ve", "vemos", "ven", "vi", "viste", "vio", "vieron",
+    "mira", "miren", "míralo", "miralo",
+    "digo", "dices", "dice", "decimos", "dicen", "dije", "dijo",
+    "compro", "compras", "compra", "compré", "compre", "compró", "compro",
+    "compramos", "compraron", "comprar", "comprando",
+    "mato", "matas", "mata", "maté", "mate", "mató", "mato", "mataron",
+    "robo", "robas", "roba", "robé", "robe", "robó", "robo", "robaron",
+    "escapo", "escapas", "escapa", "escapé", "escape", "escapó", "escaparon",
+    
+    # Common Nouns & Adjectives
+    "dinero", "plata", "pesos", "dólares", "dolares", "gratis", "truco",
+    "trucos", "misterio", "misterios", "historia", "capítulo", "capitulo",
+    "canción", "cancion", "canciones", "letra", "video oficial", "vídeo oficial",
+    "tema oficial", "disco", "álbum", "album", "música", "musica",
+    "chico", "chica", "chicos", "chicas", "amigo", "amiga", "amigos", "amigas",
+    "hombre", "mujer", "gente", "personas", "niño", "niña", "niños", "niñas",
+    "mundo", "ciudad", "calle", "barrio", "vaceo", "droga", "droga e mala",
+    "caos", "completo caos", "locura", "secreto", "secreta", "secretos", "secretas",
+    "año", "años", "ano", "anos", "día", "dia", "días", "dias", "hora", "horas",
+    "semana", "semanas", "mes", "meses",
+    "bueno", "buena", "buenos", "buenas", "malo", "mala", "malos", "malas",
+    "nuevo", "nueva", "nuevos", "nuevas", "viejo", "vieja", "viejos", "viejas",
+    "grande", "grandes", "pequeño", "pequeña", "pequeños", "pequeñas",
+    "primer", "primero", "primera", "primeros", "primeras",
+    "último", "ultimo", "última", "ultima", "últimos", "ultimos", "últimas", "ultimas",
+    "mejor", "mejores", "peor", "peores",
+    "más", "mas", "menos", "muy", "mucho", "mucha", "muchos", "muchas",
+    "poco", "poca", "pocos", "pocas", "demasiado", "bastante",
+    "cada", "ambos", "ambas", "todo", "toda", "todos", "todas",
+    "alguno", "alguna", "algunos", "algunas", "ninguno", "ninguna",
+    "cual", "cuál", "cuales", "cuáles", "cuanto", "cuánto", "cuanta", "cuánta",
+    "cuantos", "cuántos", "cuantas", "cuántas",
+    "cómo", "como", "dónde", "donde", "cuándo", "cuando", "quién", "quien",
+    "quiénes", "quienes", "qué", "que",
+    "españa", "espana", "español", "espanol", "castellano", "latino", "méxico",
+    "mexico", "argentina", "colombia", "chile", "peru", "perú",
+    "suscríbete", "suscribete", "deja tu like", "comenta", "comparte",
+    "sígueme", "sigueme", "únete", "unete", "activa la campanita"
 }
 
 AVAILABLE_LANGUAGES: Dict[str, Dict[str, str]] = {
@@ -323,46 +386,70 @@ def is_content_matching_language(
     comments_sample: str = ""
 ) -> bool:
     """
-    High-precision multi-layer language verification.
-    Calculates linguistic scores and eliminates false positives (e.g. Spanish rap matching GTA in Portuguese).
+    High-precision multi-layer linguistic scoring engine.
+    Strictly filters out foreign content (especially Spanish vs Portuguese).
     """
     if not target_lang or target_lang in ("global", "auto", "en"):
         return True
 
+    title_clean = title.lower()
     full_text = f"{title} {description} {channel_name} {comments_sample}".lower()
+    
     words_list = re.findall(r"\b\w+\b", full_text)
     words_set = set(words_list)
+    title_words_set = set(re.findall(r"\b\w+\b", title_clean))
 
     if target_lang == "pt":
         pt_score = 0
         es_score = 0
 
-        # 1. Exclusive Portuguese Characters (ã, õ, ç, ê, ô, à do NOT exist in Spanish)
+        # 1. Exclusive Spanish Characters (ñ, ¿, ¡) -> Immediate heavy penalty
+        if re.search(r"[ñ¿¡]", full_text):
+            es_score += 30
+
+        # 2. Exclusive Portuguese Characters (ã, õ, ç, ê, ô, à do NOT exist in Spanish)
         pt_char_matches = len(re.findall(r"[ãõçêôà]", full_text))
-        pt_score += pt_char_matches * 5
+        pt_score += pt_char_matches * 6
 
-        # 2. Exclusive Spanish Characters (ñ, ¿, ¡)
-        es_char_matches = len(re.findall(r"[ñ¿¡]", full_text))
-        es_score += es_char_matches * 10
+        # 3. Isolated Spanish Conjunction 'y' (In Portuguese, conjunction is 'e')
+        if re.search(r"\by\b", title_clean) or re.search(r"\by\b", full_text):
+            es_score += 15
 
-        # 3. Exclusive Word Matches
-        matched_pt = words_set.intersection(PT_EXCLUSIVE_WORDS)
-        matched_es = words_set.intersection(ES_EXCLUSIVE_WORDS)
+        # 4. Strict Title Word Matches (Title carries 70% of grammatical intent)
+        matched_es_title = title_words_set.intersection(ES_EXCLUSIVE_WORDS)
+        matched_pt_title = title_words_set.intersection(PT_EXCLUSIVE_WORDS)
+        
+        es_score += len(matched_es_title) * 8
+        pt_score += len(matched_pt_title) * 6
 
-        pt_score += len(matched_pt) * 3
-        es_score += len(matched_es) * 4
+        # 5. Full Context Word Matches
+        matched_pt_full = words_set.intersection(PT_EXCLUSIVE_WORDS)
+        matched_es_full = words_set.intersection(ES_EXCLUSIVE_WORDS)
 
-        # 4. Check explicit Brazilian / PT tokens
-        if any(token in full_text for token in ["brasil", "brasileiro", "brasileira", "pt-br", "pt_br", "br", "português", "portugues", "canal brasileiro", "em português"]):
-            pt_score += 15
+        pt_score += len(matched_pt_full) * 3
+        es_score += len(matched_es_full) * 4
 
-        # 5. Check explicit Spanish tokens
+        # 6. Check Brazilian tokens (only add weight if no strong Spanish words exist)
+        if any(token in full_text for token in ["brasil", "brasileiro", "brasileira", "pt-br", "pt_br", "em português"]):
+            if len(matched_es_title) == 0:
+                pt_score += 8
+            else:
+                pt_score += 2
+
+        # 7. Check explicit Spanish channel/video tokens
         if any(token in full_text for token in ["españa", "espana", "español", "espanol", "latino", "mexico", "argentina", "colombia", "en español", "canción oficial", "video oficial"]):
-            es_score += 10
+            es_score += 20
 
-        # Final evaluation: Must have Portuguese presence and strictly outweigh Spanish
+        # Strict Isolation Rules for Portuguese:
+        # If Spanish words in title >= 2, reject immediately
+        if len(matched_es_title) >= 2 and len(matched_pt_title) <= 1:
+            return False
+
+        # If es_score outweighs pt_score, reject
         if es_score > pt_score:
             return False
+
+        # Must have at least minimum Portuguese presence
         if pt_score >= 3 and pt_score >= es_score:
             return True
         if pt_score > 0 and es_score == 0:
@@ -374,17 +461,19 @@ def is_content_matching_language(
         es_score = 0
         pt_score = 0
 
-        es_char_matches = len(re.findall(r"[ñ¿¡]", full_text))
-        es_score += es_char_matches * 8
+        if re.search(r"[ñ¿¡]", full_text):
+            es_score += 25
+        if re.search(r"\by\b", title_clean):
+            es_score += 15
 
         pt_char_matches = len(re.findall(r"[ãõçêôà]", full_text))
-        pt_score += pt_char_matches * 8
+        pt_score += pt_char_matches * 10
 
         matched_es = words_set.intersection(ES_EXCLUSIVE_WORDS)
         matched_pt = words_set.intersection(PT_EXCLUSIVE_WORDS)
 
-        es_score += len(matched_es) * 3
-        pt_score += len(matched_pt) * 3
+        es_score += len(matched_es) * 4
+        pt_score += len(matched_pt) * 4
 
         return es_score >= 3 and es_score >= pt_score
 

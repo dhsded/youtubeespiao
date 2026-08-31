@@ -2,6 +2,7 @@
 Help & Documentation Dialog (Centro de Ajuda & Metodologia Didática).
 Explains all formulas, traffic calculations, domain validation mechanics, DNS/WHOIS logic,
 Instagram checking, and harvesting strategies with clear didactic breakdowns.
+Fully supports Dark and Light mode styling for flawless contrast.
 """
 
 from PyQt6.QtWidgets import (
@@ -12,8 +13,9 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont, QCursor
 
 class HelpDialog(QDialog):
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, is_dark_mode: bool = True):
         super().__init__(parent)
+        self.is_dark_mode = is_dark_mode
         self.setWindowTitle("📖 Manual & Metodologia — YouTube Espião")
         self.resize(880, 640)
         self.setMinimumSize(700, 500)
@@ -24,14 +26,20 @@ class HelpDialog(QDialog):
         layout.setContentsMargins(18, 16, 18, 16)
         layout.setSpacing(14)
 
-        # Header Title
+        # Header Title Frame
         header_frame = QFrame()
-        header_frame.setStyleSheet("background-color: #1E293B; border-radius: 8px; padding: 10px 16px;")
+        if self.is_dark_mode:
+            header_frame.setStyleSheet("background-color: #1E293B; border: 1px solid #334155; border-radius: 8px; padding: 10px 16px;")
+            title_color = "#38BDF8"
+        else:
+            header_frame.setStyleSheet("background-color: #F8FAFC; border: 1px solid #CBD5E1; border-radius: 8px; padding: 10px 16px;")
+            title_color = "#0284C7"
+
         h_layout = QHBoxLayout(header_frame)
         h_layout.setContentsMargins(0, 0, 0, 0)
         
         lbl_title = QLabel("📖 Central de Ajuda, Metodologia e Fórmulas de Cálculo")
-        lbl_title.setStyleSheet("font-size: 16px; font-weight: 800; color: #38BDF8;")
+        lbl_title.setStyleSheet(f"font-size: 16px; font-weight: 800; color: {title_color};")
         h_layout.addWidget(lbl_title)
         h_layout.addStretch()
 
@@ -72,17 +80,40 @@ class HelpDialog(QDialog):
 
         layout.addWidget(tabs, 1)
 
+    def _get_css(self) -> str:
+        if self.is_dark_mode:
+            return """
+                body { font-family: 'Segoe UI', sans-serif; font-size: 13px; line-height: 1.6; color: #F1F5F9; background-color: #0F172A; }
+                h2 { color: #38BDF8; margin-top: 10px; margin-bottom: 6px; font-size: 16px; }
+                h3 { color: #818CF8; margin-top: 12px; margin-bottom: 4px; font-size: 14px; }
+                p, li { color: #E2E8F0; }
+                b { color: #FFFFFF; font-weight: 700; }
+                .card { background-color: #1E293B; border: 1px solid #334155; border-radius: 6px; padding: 12px; margin-bottom: 12px; }
+                .formula { background-color: #0B0F17; border-left: 4px solid #38BDF8; padding: 8px 12px; font-family: monospace; font-size: 13px; color: #38BDF8; font-weight: bold; margin: 6px 0; }
+                .avail { background-color: rgba(16, 185, 129, 0.15); border-left: 4px solid #10B981; }
+                .inact { background-color: rgba(245, 158, 11, 0.15); border-left: 4px solid #F59E0B; }
+                .act { background-color: rgba(239, 68, 68, 0.15); border-left: 4px solid #EF4444; }
+                .status-box { padding: 8px 12px; border-radius: 6px; margin: 6px 0; }
+            """
+        else:
+            return """
+                body { font-family: 'Segoe UI', sans-serif; font-size: 13px; line-height: 1.6; color: #0F172A; background-color: #FFFFFF; }
+                h2 { color: #0284C7; margin-top: 10px; margin-bottom: 6px; font-size: 16px; font-weight: 800; }
+                h3 { color: #4338CA; margin-top: 12px; margin-bottom: 4px; font-size: 14px; font-weight: 700; }
+                p, li { color: #1E293B; }
+                b { color: #0F172A; font-weight: 700; }
+                .card { background-color: #F8FAFC; border: 1px solid #CBD5E1; border-radius: 6px; padding: 12px; margin-bottom: 12px; }
+                .formula { background-color: #E2E8F0; border-left: 4px solid #0284C7; padding: 8px 12px; font-family: monospace; font-size: 13px; color: #0369A1; font-weight: bold; margin: 6px 0; }
+                .avail { background-color: #DCFCE7; border-left: 4px solid #16A34A; }
+                .inact { background-color: #FEF3C7; border-left: 4px solid #D97706; }
+                .act { background-color: #FEE2E2; border-left: 4px solid #DC2626; }
+                .status-box { padding: 8px 12px; border-radius: 6px; margin: 6px 0; color: #0F172A; }
+            """
+
     def _get_traffic_html(self) -> str:
-        return """
-        <style>
-            body { font-family: 'Segoe UI', sans-serif; font-size: 13px; line-height: 1.6; color: #E2E8F0; }
-            h2 { color: #38BDF8; margin-top: 10px; margin-bottom: 6px; font-size: 16px; }
-            h3 { color: #818CF8; margin-top: 12px; margin-bottom: 4px; font-size: 14px; }
-            .card { background-color: #1E293B; border: 1px solid #334155; border-radius: 6px; padding: 12px; margin-bottom: 12px; }
-            .formula { background-color: #0F172A; border-left: 4px solid #38BDF8; padding: 8px 12px; font-family: monospace; font-size: 13px; color: #F8FAFC; margin: 6px 0; }
-            .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-weight: bold; font-size: 11px; }
-            .highlight { color: #F59E0B; font-weight: bold; }
-        </style>
+        css = self._get_css()
+        return f"""
+        <style>{css}</style>
         <body>
             <h2>Como os Cálculos de Tráfego são Realizados</h2>
             <p>O YouTube Espião calcula o <b>volume real e projetado de visualizações passivas</b> de cada vídeo desde a data de postagem até o dia de hoje, permitindo avaliar com precisão o tráfego gerado por links presentes na descrição ou no comentário fixado.</p>
@@ -121,17 +152,9 @@ class HelpDialog(QDialog):
         """
 
     def _get_domain_html(self) -> str:
-        return """
-        <style>
-            body { font-family: 'Segoe UI', sans-serif; font-size: 13px; line-height: 1.6; color: #E2E8F0; }
-            h2 { color: #10B981; margin-top: 10px; margin-bottom: 6px; font-size: 16px; }
-            h3 { color: #38BDF8; margin-top: 12px; margin-bottom: 4px; font-size: 14px; }
-            .card { background-color: #1E293B; border: 1px solid #334155; border-radius: 6px; padding: 12px; margin-bottom: 12px; }
-            .status-box { padding: 8px 12px; border-radius: 6px; margin: 6px 0; }
-            .avail { background-color: rgba(16, 185, 129, 0.15); border-left: 4px solid #10B981; }
-            .inact { background-color: rgba(245, 158, 11, 0.15); border-left: 4px solid #F59E0B; }
-            .act { background-color: rgba(239, 68, 68, 0.15); border-left: 4px solid #EF4444; }
-        </style>
+        css = self._get_css()
+        return f"""
+        <style>{css}</style>
         <body>
             <h2>Como um Domínio é Validado como Livre / Disponível</h2>
             <p>O YouTube Espião executa um pipeline de <b>3 camadas de validação técnica em tempo real</b> para garantir que um domínio marcado como disponível realmente esteja livre para compra imediata.</p>
@@ -166,13 +189,9 @@ class HelpDialog(QDialog):
         """
 
     def _get_instagram_html(self) -> str:
-        return """
-        <style>
-            body { font-family: 'Segoe UI', sans-serif; font-size: 13px; line-height: 1.6; color: #E2E8F0; }
-            h2 { color: #EC4899; margin-top: 10px; margin-bottom: 6px; font-size: 16px; }
-            h3 { color: #818CF8; margin-top: 12px; margin-bottom: 4px; font-size: 14px; }
-            .card { background-color: #1E293B; border: 1px solid #334155; border-radius: 6px; padding: 12px; margin-bottom: 12px; }
-        </style>
+        css = self._get_css()
+        return f"""
+        <style>{css}</style>
         <body>
             <h2>Validação de Contas e @Handles do Instagram</h2>
             <p>O programa detecta links diretos (<code>instagram.com/usuario</code>) e menções de texto (ex: <code>siga no insta @nomedaloja</code>) presentes na descrição ou nos comentários dos vídeos.</p>
@@ -194,13 +213,9 @@ class HelpDialog(QDialog):
         """
 
     def _get_search_html(self) -> str:
-        return """
-        <style>
-            body { font-family: 'Segoe UI', sans-serif; font-size: 13px; line-height: 1.6; color: #E2E8F0; }
-            h2 { color: #F59E0B; margin-top: 10px; margin-bottom: 6px; font-size: 16px; }
-            h3 { color: #38BDF8; margin-top: 12px; margin-bottom: 4px; font-size: 14px; }
-            .card { background-color: #1E293B; border: 1px solid #334155; border-radius: 6px; padding: 12px; margin-bottom: 12px; }
-        </style>
+        css = self._get_css()
+        return f"""
+        <style>{css}</style>
         <body>
             <h2>Modos de Busca, Idiomas e Estratégias de Mineração</h2>
 
