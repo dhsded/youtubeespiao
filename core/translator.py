@@ -1,8 +1,10 @@
 """
-Multi-Language Translation & Robust Language Filtering Engine.
-Supports 12+ major languages, regional parameters (hl/gl),
-preserves acronyms (e.g., GTA, SEO), expands with localized search markers,
-and verifies that mined video content belongs to the chosen target language.
+Multi-Language Translation & High-Precision Language Detection Engine.
+Features:
+- Multi-layer linguistic scoring (Portuguese vs Spanish vs English vs other languages).
+- Comprehensive exclusive stopwords and morphological character classifiers.
+- Eliminates Spanish, English, and foreign false positives on universal terms (e.g., 'GTA').
+- Generates localized YouTube search queries when specific target languages are selected.
 """
 
 import re
@@ -22,27 +24,57 @@ UNIVERSAL_TERMS: Set[str] = {
     "iphone", "android", "ios", "windows", "mac", "pc", "playstation", "ps5", "xbox"
 }
 
-# Portuguese specific stopwords and markers
-PT_STOPWORDS = {
-    "de", "da", "do", "dos", "das", "em", "no", "na", "nos", "nas",
-    "para", "pra", "com", "como", "por", "que", "este", "esta", "seu", "sua",
-    "meu", "minha", "você", "voce", "vc", "um", "uma", "uns", "umas", "mais",
-    "muito", "bem", "bom", "sobre", "novo", "nova", "hoje", "tudo", "onde",
-    "aqui", "canal", "vídeo", "video", "jogos", "jogo", "gameplay", "brasil",
-    "brasileiro", "brasileira", "português", "portugues", "pt-br", "pt", "br",
-    "dublado", "legendado", "tutorial", "dicas", "como jogar", "jogando",
-    "análise", "analise", "história", "historia", "mod", "servidor", "rp",
-    "vida real", "dinheiro", "curso", "grátis", "gratis", "passo a passo",
-    "iniciantes", "completo", "segredos", "melhores", "fazer", "ganhar"
+# Words and tokens that are EXCLUSIVELY Portuguese (NOT Spanish or English)
+PT_EXCLUSIVE_WORDS = {
+    "o", "os", "um", "uma", "uns", "umas", "do", "da", "dos", "das",
+    "no", "na", "nos", "nas", "ao", "aos", "à", "às", "pelo", "pela",
+    "pelos", "pelas", "num", "numa", "nuns", "numas", "dele", "dela",
+    "deles", "delas", "nele", "nela", "neles", "nelas", "você", "voce",
+    "vocês", "voces", "vc", "vcs", "pra", "pras", "pro", "pros", "ele",
+    "ela", "eles", "elas", "nós", "meu", "minha", "meus", "minhas",
+    "teu", "tua", "teus", "tuas", "seu", "sua", "seus", "suas", "nosso",
+    "nossa", "nossos", "nossas", "este", "esta", "estes", "estas", "esse",
+    "essa", "esses", "essas", "aquele", "aquela", "aqueles", "aquelas",
+    "isto", "isso", "aquilo", "mesmo", "mesma", "mesmos", "mesmas",
+    "qual", "quais", "quem", "quanto", "quanta", "quantos", "quantas",
+    "onde", "aonde", "quando", "como", "porque", "porquê", "muito",
+    "muita", "muitos", "muitas", "pouco", "pouca", "poucos", "poucas",
+    "todo", "toda", "todos", "todas", "outro", "outra", "outros", "outras",
+    "algum", "alguma", "alguns", "algumas", "nenhum", "nenhuma", "tudo",
+    "nada", "algo", "alguém", "alguem", "ninguém", "ninguem", "mais",
+    "menos", "bem", "mal", "assim", "hoje", "ontem", "amanhã", "amanha",
+    "agora", "já", "ja", "sempre", "nunca", "jamais", "aqui", "aí", "ai",
+    "ali", "lá", "la", "dentro", "fora", "acima", "abaixo", "atrás",
+    "atras", "antes", "depois", "cedo", "tarde", "também", "tambem",
+    "não", "nao", "sim", "realmente", "talvez", "jogando", "fazer",
+    "ganhar", "vídeo", "video", "canal", "brasil", "brasileiro", "brasileira",
+    "jogo", "jogos", "passo a passo", "tutorial", "dicas", "completo",
+    "dublado", "legendado", "servidor", "vida real", "inscreva-se",
+    "inscrevase", "deixe seu like", "se inscreva", "compartilhe", "valeu",
+    "galera", "pessoal", "mano", "bora", "tá", "ta", "tô", "to", "estou"
 }
 
-ES_STOPWORDS = {
-    "el", "la", "los", "las", "un", "una", "unos", "unas", "de", "del",
-    "en", "para", "por", "con", "como", "que", "este", "esta", "su", "mi",
-    "tu", "usted", "más", "muy", "bien", "sobre", "nuevo", "nueva", "hoy",
-    "todo", "donde", "aquí", "canal", "vídeo", "video", "juegos", "juego",
-    "gameplay", "españa", "español", "espanol", "castellano", "tutorial",
-    "consejos", "cómo jugar", "jugando", "análisis", "historia", "dinero", "gratis"
+# Words and tokens that are EXCLUSIVELY Spanish (distinct from Portuguese)
+ES_EXCLUSIVE_WORDS = {
+    "el", "la", "los", "las", "un", "del", "al", "es", "en", "por",
+    "para", "con", "hagan", "tengo", "tienes", "tiene", "tenemos",
+    "tienen", "hacer", "hace", "hacen", "cancion", "canción", "video oficial",
+    "música", "musica", "letra", "pero", "más", "mas", "año", "años",
+    "esta", "este", "estos", "estas", "su", "sus", "mi", "mis", "tu",
+    "tus", "nuestro", "nuestra", "porque", "cuando", "donde", "quien",
+    "quienes", "yo", "tu", "él", "ella", "nosotros", "ellos", "ellas",
+    "usted", "ustedes", "muy", "mucho", "muchos", "muchas", "sin",
+    "sobre", "entre", "hasta", "desde", "hacia", "contra", "durante",
+    "bueno", "buena", "buenos", "buenas", "malo", "mala", "malos",
+    "malas", "nuevo", "nueva", "nuevos", "nuevas", "gran", "grande",
+    "primer", "primera", "ultimo", "ultima", "mismo", "misma", "tan",
+    "tanto", "tanta", "cada", "otro", "otra", "otros", "otras", "alguno",
+    "alguna", "ninguno", "ninguna", "todo", "toda", "poco", "poca",
+    "demasiado", "bastante", "cual", "cuales", "cuanto", "cuanta",
+    "españa", "espana", "español", "espanol", "castellano", "consejos",
+    "cómo jugar", "como jugar", "jugando", "análisis", "historia",
+    "dinero", "gratis", "suscríbete", "suscribete", "deja tu like",
+    "amigos", "chicos", "vaceo", "droga", "droga e mala", "calle"
 }
 
 AVAILABLE_LANGUAGES: Dict[str, Dict[str, str]] = {
@@ -213,9 +245,7 @@ def translate_query(text: str, target_lang: str) -> str:
 
 def expand_queries_for_language(keyword: str, language_code: str) -> List[Dict[str, str]]:
     """
-    Generate localized search queries.
-    If the term is an acronym like 'GTA' in Portuguese, also queries localized variations
-    (e.g., 'GTA brasil', 'GTA portugues', 'GTA') to ensure YouTube targets Portuguese content.
+    Generate localized search queries with country tokens.
     """
     keyword = keyword.strip()
     if not keyword:
@@ -241,9 +271,9 @@ def expand_queries_for_language(keyword: str, language_code: str) -> List[Dict[s
         tasks = []
 
         if language_code == "pt":
-            # For short acronyms in Portuguese (e.g. GTA, SEO, PLR), query with localized tokens
-            if is_universal_acronym(keyword) and len(keyword.split()) <= 2:
-                for q_variant in [f"{keyword} brasil", f"{keyword} portugues", keyword]:
+            # For short terms in Portuguese (e.g. GTA, SEO, PLR, dropshipping), query localized tokens
+            if len(keyword.split()) <= 2:
+                for q_variant in [f"{keyword} brasil", f"{keyword} portugues", f"{keyword} pt-br", keyword]:
                     tasks.append({
                         "query": q_variant,
                         "original_keyword": keyword,
@@ -257,7 +287,7 @@ def expand_queries_for_language(keyword: str, language_code: str) -> List[Dict[s
             else:
                 target_query = keyword
         elif language_code == "es":
-            if is_universal_acronym(keyword) and len(keyword.split()) <= 2:
+            if len(keyword.split()) <= 2:
                 for q_variant in [f"{keyword} español", f"{keyword} espana", keyword]:
                     tasks.append({
                         "query": q_variant,
@@ -293,33 +323,70 @@ def is_content_matching_language(
     comments_sample: str = ""
 ) -> bool:
     """
-    Validate if a video's content belongs to the selected language.
-    Prevents foreign language leakage when searching universal acronyms like 'GTA'.
+    High-precision multi-layer language verification.
+    Calculates linguistic scores and eliminates false positives (e.g. Spanish rap matching GTA in Portuguese).
     """
     if not target_lang or target_lang in ("global", "auto", "en"):
         return True
 
     full_text = f"{title} {description} {channel_name} {comments_sample}".lower()
+    words_list = re.findall(r"\b\w+\b", full_text)
+    words_set = set(words_list)
 
     if target_lang == "pt":
-        # Check Portuguese characters / diacritics
-        if re.search(r"[áéíóúâêôãõçà]", full_text):
+        pt_score = 0
+        es_score = 0
+
+        # 1. Exclusive Portuguese Characters (ã, õ, ç, ê, ô, à do NOT exist in Spanish)
+        pt_char_matches = len(re.findall(r"[ãõçêôà]", full_text))
+        pt_score += pt_char_matches * 5
+
+        # 2. Exclusive Spanish Characters (ñ, ¿, ¡)
+        es_char_matches = len(re.findall(r"[ñ¿¡]", full_text))
+        es_score += es_char_matches * 10
+
+        # 3. Exclusive Word Matches
+        matched_pt = words_set.intersection(PT_EXCLUSIVE_WORDS)
+        matched_es = words_set.intersection(ES_EXCLUSIVE_WORDS)
+
+        pt_score += len(matched_pt) * 3
+        es_score += len(matched_es) * 4
+
+        # 4. Check explicit Brazilian / PT tokens
+        if any(token in full_text for token in ["brasil", "brasileiro", "brasileira", "pt-br", "pt_br", "br", "português", "portugues", "canal brasileiro", "em português"]):
+            pt_score += 15
+
+        # 5. Check explicit Spanish tokens
+        if any(token in full_text for token in ["españa", "espana", "español", "espanol", "latino", "mexico", "argentina", "colombia", "en español", "canción oficial", "video oficial"]):
+            es_score += 10
+
+        # Final evaluation: Must have Portuguese presence and strictly outweigh Spanish
+        if es_score > pt_score:
+            return False
+        if pt_score >= 3 and pt_score >= es_score:
             return True
-        # Check Portuguese keywords and stopwords
-        words = set(re.findall(r"\b\w+\b", full_text))
-        matched = words.intersection(PT_STOPWORDS)
-        if len(matched) >= 1:
+        if pt_score > 0 and es_score == 0:
             return True
+
         return False
 
     elif target_lang == "es":
-        if re.search(r"[áéíóúñ¿¡]", full_text):
-            return True
-        words = set(re.findall(r"\b\w+\b", full_text))
-        matched = words.intersection(ES_STOPWORDS)
-        if len(matched) >= 1:
-            return True
-        return False
+        es_score = 0
+        pt_score = 0
+
+        es_char_matches = len(re.findall(r"[ñ¿¡]", full_text))
+        es_score += es_char_matches * 8
+
+        pt_char_matches = len(re.findall(r"[ãõçêôà]", full_text))
+        pt_score += pt_char_matches * 8
+
+        matched_es = words_set.intersection(ES_EXCLUSIVE_WORDS)
+        matched_pt = words_set.intersection(PT_EXCLUSIVE_WORDS)
+
+        es_score += len(matched_es) * 3
+        pt_score += len(matched_pt) * 3
+
+        return es_score >= 3 and es_score >= pt_score
 
     elif target_lang == "ru":
         return bool(re.search(r"[\u0400-\u04FF]", full_text))

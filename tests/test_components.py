@@ -161,6 +161,31 @@ class TestYoutubeEspiaoCore(unittest.TestCase):
         )
         self.assertFalse(en_video)
 
+        # 3. Spanish music / Latin videos with GTA acronym (must be rejected for target_lang='pt')
+        es_video1 = is_content_matching_language(
+            title="EZZY R x RONNY GTA x KIK1 STW - HAGAN DE TO MENO DANO (VIDEO OFICIAL)",
+            description="Musica oficial en espanol",
+            channel_name="Ezzy R",
+            target_lang="pt"
+        )
+        self.assertFalse(es_video1)
+
+        es_video2 = is_content_matching_language(
+            title="Rony alca La Droga e Mala (Video oficial)",
+            description="Video musical oficial",
+            channel_name="Rony Alca",
+            target_lang="pt"
+        )
+        self.assertFalse(es_video2)
+
+        es_video3 = is_content_matching_language(
+            title="RONNY GTA X PAPA JEISON - LA TENGO DE VACEO [ VIDEO OFICIAL ]",
+            description="Tema musical oficial",
+            channel_name="Papa Jeison",
+            target_lang="pt"
+        )
+        self.assertFalse(es_video3)
+
     def test_pinned_comment_link_extraction(self):
         """Test domain & Instagram extraction specifically from pinned comments."""
         from core.domain_extractor import DomainExtractor

@@ -308,7 +308,6 @@ class YouTubeCrawler:
             self.seen_video_ids.add(vid_id)
 
             processed_index += 1
-            current_total = max(len(scanned_videos) + len(initial_videos) + 1, max_videos)
 
             if on_progress:
                 on_progress(len(scanned_videos) + 1, max_videos, f"{target_info}Analisando [{len(scanned_videos)+1}/{max_videos}]: {v_item['title'][:35]}...")
@@ -330,7 +329,7 @@ class YouTubeCrawler:
             pinned_comment = deep_info["pinned_comment"]
             top_comments = deep_info.get("top_comments", [])
 
-            # Robust Language Verification: Filter out foreign content when a specific language is selected
+            # High-Precision Multi-Layer Language Verification
             if target_lang and target_lang not in ("global", "auto", "en"):
                 comments_text_sample = " ".join(top_comments[:3])
                 if not is_content_matching_language(
@@ -340,7 +339,7 @@ class YouTubeCrawler:
                     target_lang=target_lang,
                     comments_sample=comments_text_sample
                 ):
-                    # Video has no context in target language, skip
+                    # Video is in foreign language (e.g. Spanish, English), strictly skip
                     continue
 
             # Recursive Related Videos Harvest: Discover related videos in the exact niche cluster
@@ -355,8 +354,14 @@ class YouTubeCrawler:
                         gl=gl
                     )
                     for r_vid in rel_vids:
-                        if r_vid.get("id") and r_vid["id"] not in self.seen_video_ids:
-                            initial_videos.append(r_vid)
+                        r_id = r_vid.get("id")
+                        if r_id and r_id not in self.seen_video_ids:
+                            # Quick check on related video title
+                            if target_lang and target_lang not in ("global", "auto", "en"):
+                                if is_content_matching_language(r_vid.get("title", ""), "", r_vid.get("channel_name", ""), target_lang):
+                                    initial_videos.append(r_vid)
+                            else:
+                                initial_videos.append(r_vid)
                 except Exception as e:
                     logger.debug(f"Related videos fetch error: {e}")
 
