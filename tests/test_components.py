@@ -350,5 +350,19 @@ class TestYoutubeEspiaoCore(unittest.TestCase):
             if os.path.exists(temp_pdf):
                 os.remove(temp_pdf)
 
+    def test_domain_validator_active_rejection(self):
+        """Test that active domains like vipertacticalshop.co.uk are never marked as Available."""
+        from core.domain_validator import DomainValidator
+        validator = DomainValidator()
+        
+        # 1. Registered domain
+        res_active = validator.validate_domain("vipertacticalshop.co.uk")
+        self.assertNotEqual(res_active["status"], "Disponível")
+        self.assertTrue(res_active["status"] in ("Ativo", "Inativo"))
+        
+        # 2. Registered global domain
+        res_google = validator.validate_domain("google.com")
+        self.assertEqual(res_google["status"], "Ativo")
+
 if __name__ == "__main__":
     unittest.main()
