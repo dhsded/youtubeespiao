@@ -1,8 +1,9 @@
 """
 Integrated Chromium Web Browser Component.
 Features:
-- Stable Live Player Feed (Modo Player Limpo / Cinema Estável) with zero DOM jumping, no sidebar shifting, and smooth transitions.
-- Dual View Modes: '🎬 Player Estável' (clean focused 16:9 player) vs '🌐 Página Completa' (full YouTube desktop page).
+- Native YouTube Video Player with Zero Embed Errors (No Error 152 / 150).
+- Clean Theater Styling: Injects distraction-free CSS hiding sidebars, comments, and jumping ads while keeping the official native player 100% functional.
+- Dual View Modes: '🎬 Modo Foco / Limpo' (centered player without sidebars) vs '🌐 Modo Página Completa' (full standard YouTube layout).
 - '🔴 Seguir Varredura ao Vivo' checkbox toggle to lock or follow live video stream.
 - High-DPI Zoom Controls (🔍+, 🔍-, Reset).
 - One-click launch in External Desktop Browser (Chrome/Edge/Firefox).
@@ -19,6 +20,49 @@ from PyQt6.QtCore import QUrl, Qt
 from PyQt6.QtGui import QCursor
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 
+CLEAN_THEATER_JS = """
+(function() {
+    var style = document.getElementById('yt-spy-clean-theater');
+    if (!style) {
+        style = document.createElement('style');
+        style.id = 'yt-spy-clean-theater';
+        if (document.head) {
+            document.head.appendChild(style);
+        } else {
+            document.documentElement.appendChild(style);
+        }
+    }
+    style.textContent = `
+        #secondary, #below, #comments, #chat, ytd-merch-shelf-renderer, #related, ytd-banner-promo-renderer, #masthead-container {
+            display: none !important;
+        }
+        #primary, ytd-watch-flexy, #primary-inner {
+            max-width: 100% !important;
+            min-width: 100% !important;
+            margin: 0 auto !important;
+            padding: 0 !important;
+        }
+        #player-container-outer, #player-container-inner, #player-container, #ytd-player {
+            max-width: 1080px !important;
+            margin: 10px auto !important;
+        }
+        body {
+            background-color: #0B0F17 !important;
+            overflow-x: hidden !important;
+        }
+    `;
+})();
+"""
+
+RESTORE_FULL_JS = """
+(function() {
+    var style = document.getElementById('yt-spy-clean-theater');
+    if (style) {
+        style.remove();
+    }
+})();
+"""
+
 class BrowserView(QWidget):
     def __init__(self, default_url: str = "https://www.youtube.com", parent=None):
         super().__init__(parent)
@@ -26,7 +70,6 @@ class BrowserView(QWidget):
         self.zoom_factor = 0.90
         self.clean_player_mode = True
         self.follow_live_stream = True
-        self.current_video_id: Optional[str] = None
         self.current_raw_url: str = default_url
 
         self._init_ui()
@@ -60,7 +103,7 @@ class BrowserView(QWidget):
         live_layout.addWidget(self.chk_follow_live)
 
         # Toggle Mode Button (Clean Player vs Full Page)
-        self.btn_mode_toggle = QPushButton("🎬 Modo: Player Estável")
+        self.btn_mode_toggle = QPushButton("🎬 Modo: Player Limpo")
         self.btn_mode_toggle.setStyleSheet("""
             QPushButton {
                 background-color: #1E293B;
@@ -77,7 +120,7 @@ class BrowserView(QWidget):
             }
         """)
         self.btn_mode_toggle.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        self.btn_mode_toggle.setToolTip("Alternar entre Player Estável (sem elementos pulando) e Página Completa do YouTube")
+        self.btn_mode_toggle.setToolTip("Alternar entre Modo Player Limpo (sem barras laterais) e Página Completa do YouTube")
         self.btn_mode_toggle.clicked.connect(self._toggle_player_mode)
         live_layout.addWidget(self.btn_mode_toggle)
 
@@ -225,101 +268,13 @@ class BrowserView(QWidget):
             return match.group(1) if match else None
         return None
 
-    def _render_clean_player_html(self, video_id: str, title: str) -> str:
-        """
-        Renders a fixed-aspect 16:9 theater player without ads, sidebar clickbait,
-        or jumpy comments for zero visual flicker during mining.
-        """
-        embed_src = f"https://www.youtube-nocookie.com/embed/{video_id}?autoplay=1&mute=1&rel=0&modestbranding=1&controls=1"
-        safe_title = title.replace('"', '&quot;').replace('<', '&lt;').replace('>', '&gt;')
-        return f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <meta charset="utf-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <style>
-                * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-                body {{
-                    background-color: #0B0F17;
-                    color: #F8FAFC;
-                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-                    display: flex;
-                    flex-direction: column;
-                    align-items: center;
-                    justify-content: center;
-                    min-height: 100vh;
-                    overflow: hidden;
-                    padding: 18px;
-                }}
-                .player-card {{
-                    width: 100%;
-                    max-width: 1040px;
-                    display: flex;
-                    flex-direction: column;
-                    background-color: #131B2A;
-                    border-radius: 12px;
-                    overflow: hidden;
-                    box-shadow: 0 16px 36px rgba(0, 0, 0, 0.6);
-                    border: 1px solid #222F44;
-                }}
-                .video-box {{
-                    position: relative;
-                    width: 100%;
-                    padding-bottom: 56.25%; /* 16:9 HD */
-                    background-color: #000000;
-                }}
-                .video-box iframe {{
-                    position: absolute;
-                    top: 0;
-                    left: 0;
-                    width: 100%;
-                    height: 100%;
-                    border: 0;
-                }}
-                .info-bar {{
-                    padding: 12px 18px;
-                    background: linear-gradient(180deg, #1E293B 0%, #0F172A 100%);
-                    display: flex;
-                    justify-content: space-between;
-                    align-items: center;
-                    gap: 12px;
-                }}
-                .title-txt {{
-                    font-size: 14px;
-                    font-weight: 700;
-                    color: #38BDF8;
-                    white-space: nowrap;
-                    overflow: hidden;
-                    text-overflow: ellipsis;
-                    flex: 1;
-                }}
-                .live-pill {{
-                    background-color: #DC2626;
-                    color: #FFFFFF;
-                    font-size: 11px;
-                    font-weight: 800;
-                    padding: 4px 10px;
-                    border-radius: 12px;
-                    letter-spacing: 0.5px;
-                    white-space: nowrap;
-                    box-shadow: 0 0 10px rgba(220, 38, 38, 0.5);
-                }}
-            </style>
-        </head>
-        <body>
-            <div class="player-card">
-                <div class="video-box">
-                    <iframe src="{embed_src}" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
-                </div>
-                <div class="info-bar">
-                    <div class="title-txt">🎬 {safe_title}</div>
-                    <div class="live-pill">🔴 MINERANDO AO VIVO</div>
-                </div>
-            </div>
-        </body>
-        </html>
-        """
+    def _apply_clean_mode_js(self):
+        """Inject clean CSS to hide sidebars and center video player seamlessly."""
+        if "youtube.com" in self.web_view.url().toString():
+            if self.clean_player_mode:
+                self.web_view.page().runJavaScript(CLEAN_THEATER_JS)
+            else:
+                self.web_view.page().runJavaScript(RESTORE_FULL_JS)
 
     def _on_follow_live_toggled(self, checked: bool):
         self.follow_live_stream = checked
@@ -327,14 +282,10 @@ class BrowserView(QWidget):
     def _toggle_player_mode(self):
         self.clean_player_mode = not self.clean_player_mode
         if self.clean_player_mode:
-            self.btn_mode_toggle.setText("🎬 Modo: Player Estável")
-            if self.current_video_id:
-                html = self._render_clean_player_html(self.current_video_id, self.lbl_live_title.text().replace("Analisando: ", ""))
-                self.web_view.setHtml(html)
+            self.btn_mode_toggle.setText("🎬 Modo: Player Limpo")
         else:
             self.btn_mode_toggle.setText("🌐 Modo: Página Completa")
-            if self.current_raw_url:
-                self.web_view.load(QUrl(self.current_raw_url))
+        self._apply_clean_mode_js()
 
     def _zoom_in(self):
         self.zoom_factor = min(2.0, round(self.zoom_factor + 0.1, 2))
@@ -352,26 +303,25 @@ class BrowserView(QWidget):
         self.btn_zoom_reset.setText(f"{int(self.zoom_factor * 100)}%")
 
     def set_live_video(self, url: str, title: str):
-        """Update live status and load current analyzed video in real-time."""
+        """Update live status and load current analyzed video natively without embed restrictions."""
         if not self.follow_live_stream:
             return
 
         self.lbl_live_badge.setText("🔴 MINERANDO AO VIVO")
         self.lbl_live_badge.setStyleSheet("color: #EF4444; font-weight: 800; font-size: 11px;")
         self.lbl_live_title.setText(f"Analisando: {title}")
-        self.current_raw_url = url
-        self.url_bar.setText(url)
-
-        vid_id = self.extract_youtube_video_id(url)
-        self.current_video_id = vid_id
-
-        if vid_id and self.clean_player_mode:
-            # Render stable zero-flicker 16:9 theater player
-            html = self._render_clean_player_html(vid_id, title)
-            self.web_view.setHtml(html, QUrl("https://www.youtube.com"))
+        
+        # Load official direct YouTube Watch URL
+        clean_url = url.strip()
+        vid_id = self.extract_youtube_video_id(clean_url)
+        if vid_id:
+            official_url = f"https://www.youtube.com/watch?v={vid_id}"
         else:
-            # Full desktop page
-            self.navigate_to(url)
+            official_url = clean_url
+
+        self.current_raw_url = official_url
+        self.url_bar.setText(official_url)
+        self.web_view.load(QUrl(official_url))
 
     def navigate_to(self, url: str):
         """Navigate to specified URL, automatically prepending protocol if missing."""
@@ -399,11 +349,7 @@ class BrowserView(QWidget):
         self.web_view.forward()
 
     def _reload_page(self):
-        if self.clean_player_mode and self.current_video_id:
-            html = self._render_clean_player_html(self.current_video_id, self.lbl_live_title.text().replace("Analisando: ", ""))
-            self.web_view.setHtml(html)
-        else:
-            self.web_view.reload()
+        self.web_view.reload()
 
     def _open_in_external_browser(self):
         from PyQt6.QtGui import QDesktopServices
@@ -414,8 +360,7 @@ class BrowserView(QWidget):
             QDesktopServices.openUrl(QUrl(clean_url))
 
     def _on_web_url_changed(self, qurl: QUrl):
-        if not self.clean_player_mode or not self.current_video_id:
-            self.url_bar.setText(qurl.toString())
+        self.url_bar.setText(qurl.toString())
 
     def _on_load_started(self):
         self.progress_bar.setValue(10)
@@ -423,6 +368,9 @@ class BrowserView(QWidget):
 
     def _on_load_progress(self, progress: int):
         self.progress_bar.setValue(progress)
+        if progress > 60:
+            self._apply_clean_mode_js()
 
     def _on_load_finished(self, ok: bool):
         self.progress_bar.hide()
+        self._apply_clean_mode_js()
