@@ -231,6 +231,18 @@ class HelpDialog(QDialog):
             </div>
 
             <div class="card">
+                <h3>⚙️ O que é o "Limite por Termo / Canal"?</h3>
+                <p>O <b>Limite por Termo/Canal</b> é o controle que define a <b>quantidade máxima de vídeos</b> que o programa irá coletar, inspecionar e analisar para cada item da sua pesquisa:</p>
+                <ul>
+                    <li><b>Na Busca por Palavras-chave:</b> Se você inserir 2 palavras-chave (ex: <code>GTA, marketing digital</code>) com limite de <code>50</code>, o programa analisará até 50 vídeos de GTA e até 50 vídeos de marketing digital (totalizando até 100 vídeos).</li>
+                    <li><b>Na Busca por Canais:</b> Se você inserir 3 canais com limite de <code>100</code>, o robô analisará os 100 vídeos com maior tráfego de cada canal (totalizando até 300 vídeos).</li>
+                    <li><b>Opção "Todos os Vídeos" (∞):</b> Ao marcar a caixa <b>Todos os Vídeos</b>, o limite numérico é ignorado e o robô varre <b>100% dos vídeos disponíveis</b> do canal ou pesquisa até o final.</li>
+                </ul>
+                <div class="formula">Vídeos Totais Analisados = (Qtd de Termos ou Canais) × (Limite Definido)</div>
+                <p><b>💡 Dica Estratégica:</b> Use limites entre <b>25 e 50</b> para pesquisas rápidas e exploratórias em várias palavras-chave. Use limites de <b>100 a 500</b> (ou <b>Todos os Vídeos</b>) quando encontrar canais antigos com alto volume de vídeos clássicos abandonados.</p>
+            </div>
+
+            <div class="card">
                 <h3>📺 Modo 2: Busca por Canal e Listas de Canais</h3>
                 <p>Permite escanear canais inteiros ou listas em lote:</p>
                 <ul>
