@@ -31,7 +31,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.instance_number = InstanceManager.get_instance_number()
-        self.setWindowTitle(f"YouTube Espião #{self.instance_number} — Rastreador de Domínios Expirados")
+        self.setWindowTitle(f"YouTube Espião v3.0.0 #{self.instance_number} — Rastreador de Domínios Expirados")
         self.resize(1380, 890)
         self.setMinimumSize(1040, 700)
         
@@ -125,7 +125,7 @@ class MainWindow(QMainWindow):
         self.btn_close_app.clicked.connect(self._force_quit)
         header_layout.addWidget(self.btn_close_app)
 
-        lbl_version = QLabel("v1.5.0")
+        lbl_version = QLabel("v3.0.0")
         lbl_version.setObjectName("header_version")
         header_layout.addWidget(lbl_version)
 
@@ -224,7 +224,7 @@ class MainWindow(QMainWindow):
 
         tray_menu.addSeparator()
 
-        action_quit = QAction("❌ Sair do Aplicativo", self)
+        action_quit = QAction("❌ Fechar Programa Totalmente", self)
         action_quit.triggered.connect(self._force_quit)
         tray_menu.addAction(action_quit)
 
@@ -266,34 +266,64 @@ class MainWindow(QMainWindow):
         super().changeEvent(event)
 
     def closeEvent(self, event):
-        # If crawler is currently active, minimize to tray without blocking notifications
-        if self.hunter_tab.crawler_thread and self.hunter_tab.crawler_thread.isRunning():
-            event.ignore()
-            self.hide()
-            self._optimize_memory_for_background()
+        # If crawler is currently active, prompt user with choices
+        if hasattr(self, "hunter_tab") and self.hunter_tab.crawler_thread and self.hunter_tab.crawler_thread.isRunning():
+            msg = QMessageBox(self)
+            msg.setWindowTitle("Fechar YouTube Espião")
+            msg.setText("<b>A mineração de vídeos está em andamento.</b><br><br>O que você deseja fazer?")
+            btn_close = msg.addButton("❌ Fechar Totalmente", QMessageBox.ButtonRole.DestructiveRole)
+            btn_tray = msg.addButton("📥 Minimizar na Bandeja", QMessageBox.ButtonRole.AcceptRole)
+            btn_cancel = msg.addButton("Cancelar", QMessageBox.ButtonRole.RejectRole)
+            msg.setDefaultButton(btn_tray)
+            msg.exec()
+
+            if msg.clickedButton() == btn_close:
+                event.accept()
+                self._force_quit()
+            elif msg.clickedButton() == btn_tray:
+                event.ignore()
+                self.hide()
+                self._optimize_memory_for_background()
+            else:
+                event.ignore()
         else:
-            InstanceManager.release_instance()
             event.accept()
+            self._force_quit()
 
     def _force_quit(self):
         """Completely stop all workers, release instance slot, and terminate the application immediately."""
-        if hasattr(self, "hunter_tab") and self.hunter_tab.crawler_thread and self.hunter_tab.crawler_thread.isRunning():
-            reply = QMessageBox.question(
-                self,
-                "Fechar Programa",
-                "A mineração está ativa no momento. Deseja realmente parar todos os processos e fechar o programa totalmente?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No
-            )
-            if reply != QMessageBox.StandardButton.Yes:
-                return
-            self.hunter_tab.crawler_thread.stop()
+        try:
+            if hasattr(self, "hunter_tab") and self.hunter_tab.crawler_thread:
+                self.hunter_tab.crawler_thread.stop()
+        except Exception:
+            pass
         
-        InstanceManager.release_instance()
-        if hasattr(self, "tray_icon"):
-            self.tray_icon.hide()
-        QApplication.instance().quit()
+        try:
+            InstanceManager.release_instance()
+        except Exception:
+            pass
+
+        try:
+            if hasattr(self, "tray_icon"):
+                self.tray_icon.hide()
+        except Exception:
+            pass
+
+        try:
+            QApplication.instance().quit()
+        except Exception:
+            pass
+
+        # Force immediate termination of all child processes and process tree
         import os
+        import sys
+        import subprocess
+        try:
+            pid = os.getpid()
+            if sys.platform == "win32":
+                subprocess.Popen(f"taskkill /F /T /PID {pid}", shell=True, creationflags=0x08000000)
+        except Exception:
+            pass
         os._exit(0)
 
     def _open_help_dialog(self):
