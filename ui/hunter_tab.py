@@ -52,6 +52,7 @@ class CrawlerThread(QThread):
         date_filter: str = "all_time",
         year_range: Optional[Tuple[int, int]] = None,
         max_videos: int = 50,
+        min_views: int = 0,
         sort_by: str = "view_count",
         fast_mode: bool = True,
         include_related: bool = True,
@@ -65,6 +66,7 @@ class CrawlerThread(QThread):
         self.date_filter = date_filter
         self.year_range = year_range
         self.max_videos = max_videos
+        self.min_views = min_views
         self.sort_by = sort_by
         self.fast_mode = fast_mode
         self.include_related = include_related
@@ -120,6 +122,7 @@ class CrawlerThread(QThread):
                         results = self.crawler.process_channel(
                             channel_identifier=ch,
                             max_videos=self.max_videos,
+                            min_views=self.min_views,
                             sort_by=self.sort_by,
                             hl="pt",
                             gl="BR",
@@ -167,6 +170,7 @@ class CrawlerThread(QThread):
                                 keyword=query,
                                 target_lang=self.selected_lang,
                                 max_videos=self.max_videos,
+                                min_views=self.min_views,
                                 sort_by=self.sort_by,
                                 date_filter=self.date_filter,
                                 year_range=self.year_range,
@@ -509,6 +513,22 @@ class HunterTab(QWidget):
         self.chk_unlimited.toggled.connect(lambda checked: self.spin_max.setEnabled(not checked))
         row2.addWidget(self.chk_unlimited)
 
+        # Minimum Views Filter (Eliminates unnecessary searches & scraping)
+        lbl_min_views = QLabel("Mín. Views:")
+        lbl_min_views.setStyleSheet("font-weight: 600;")
+        row2.addWidget(lbl_min_views)
+
+        self.spin_min_views = QSpinBox()
+        self.spin_min_views.setRange(0, 50000000)
+        self.spin_min_views.setValue(0)
+        self.spin_min_views.setSingleStep(1000)
+        self.spin_min_views.setSpecialValueText("0 (Sem Mínimo)")
+        self.spin_min_views.setSuffix(" views")
+        self.spin_min_views.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.spin_min_views.setFixedWidth(135)
+        self.spin_min_views.setToolTip("Descarta e ignora vídeos com visualizações inferiores a este valor para evitar buscas desnecessárias.")
+        row2.addWidget(self.spin_min_views)
+
         self.chk_fast_mode = QCheckBox("⚡ Turbo")
         self.chk_fast_mode.setChecked(True)
         self.chk_fast_mode.setToolTip("Mineração ultra-rápida de vídeos (~0.4s por vídeo).")
@@ -682,7 +702,22 @@ class HunterTab(QWidget):
         targets = [k.strip() for k in raw_text.replace("\n", ",").replace(";", ",").split(",") if k.strip()]
         selected_lang = self.combo_lang.currentData() if search_mode == "keywords" else "pt"
         date_filter = self.combo_date.currentData() if search_mode == "keywords" else "all_time"
-        year_range = (self.spin_year_start.value(), self.spin_year_end.value()) if (search_mode == "keywords" and date_filter == "custom_range") else None
+        
+        # Strictly enforce year boundaries if specified
+        if search_mode == "keywords":
+            if date_filter == "custom_range":
+                s_yr = self.spin_year_start.value()
+                e_yr = self.spin_year_end.value()
+                year_range = (min(s_yr, e_yr), max(s_yr, e_yr))
+            elif str(date_filter).isdigit():
+                yr = int(date_filter)
+                year_range = (yr, yr)
+            else:
+                year_range = None
+        else:
+            year_range = None
+
+        min_views = self.spin_min_views.value()
         max_vids = 100000 if self.chk_unlimited.isChecked() else self.spin_max.value()
         sort_by = self.combo_sort.currentData()
         fast_mode = self.chk_fast_mode.isChecked()
@@ -702,8 +737,15 @@ class HunterTab(QWidget):
         self.progress_bar.setValue(0)
 
         mode_title = f"canais ({len(targets)} canais)" if search_mode == "channels" else f"termos ({len(targets)} termos)"
-        self.status_label.setText(f"Minerando vídeos de {mode_title} (Turbo: {fast_mode})...")
-        self._append_log(f"--- 🚀 Mineração Iniciada [Modo: {self.combo_mode.currentText()}] ({len(targets)} alvos | Turbo: {fast_mode}) ---")
+        filter_details = []
+        if min_views > 0:
+            filter_details.append(f"Mín. Views: {min_views:,}")
+        if year_range:
+            filter_details.append(f"Anos: {year_range[0]}-{year_range[1]}")
+        details_str = f" | {' • '.join(filter_details)}" if filter_details else ""
+
+        self.status_label.setText(f"Minerando vídeos de {mode_title} (Turbo: {fast_mode}{details_str})...")
+        self._append_log(f"--- 🚀 Mineração Iniciada [Modo: {self.combo_mode.currentText()}] ({len(targets)} alvos | Turbo: {fast_mode}{details_str}) ---")
 
         self.crawler_thread = CrawlerThread(
             keywords=targets,
@@ -712,6 +754,7 @@ class HunterTab(QWidget):
             date_filter=date_filter,
             year_range=year_range,
             max_videos=max_vids,
+            min_views=min_views,
             sort_by=sort_by,
             fast_mode=fast_mode,
             include_related=include_related,

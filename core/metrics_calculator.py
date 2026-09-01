@@ -127,10 +127,12 @@ def calculate_video_metrics(
                 except Exception:
                     continue
 
+    upload_year = None
     if pub_dt:
         diff_days = (now - pub_dt).total_seconds() / 86400.0
         days_active = max(0.01, diff_days) # At least ~15 minutes
         date_str = pub_dt.strftime("%d/%m/%Y")
+        upload_year = pub_dt.year
     else:
         # Fallback to relative text parsing (e.g. 'há 2 dias', '3 weeks ago')
         rel_days = parse_relative_time_text(published_text) if published_text else None
@@ -138,6 +140,7 @@ def calculate_video_metrics(
             days_active = max(0.01, rel_days)
             est_dt = now - timedelta(days=days_active)
             date_str = est_dt.strftime("%d/%m/%Y")
+            upload_year = est_dt.year
         else:
             days_active = 30.0
             date_str = published_text.strip().capitalize() if published_text else "Recente"
@@ -233,6 +236,7 @@ def calculate_video_metrics(
         "days_active": int(days_active),
         "hours_active": round(hours_active, 1),
         "publish_date": date_str,
+        "upload_year": upload_year,
         "views_90d": views_90d,
         "views_90d_formatted": format_number(views_90d),
         "hourly_views": round(final_vph, 2),

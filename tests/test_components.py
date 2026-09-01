@@ -780,6 +780,48 @@ class TestYoutubeEspiaoCore(unittest.TestCase):
         self.assertEqual(format_vph(0.76), "⚡ 0.76 VPH")
         self.assertEqual(format_vph(0.01), "⚡ < 0.1 VPH")
 
+    def test_min_views_and_year_range_filtering(self):
+        """Test video filtering with minimum views threshold and strict year interval enforcement."""
+        from core.metrics_calculator import calculate_video_metrics
+        from core.youtube_crawler import YouTubeCrawler
+
+        # 1. Test upload_year extraction in metrics
+        dt_2022 = datetime(2022, 6, 15, tzinfo=timezone.utc)
+        m2022 = calculate_video_metrics(view_count=50000, upload_date=dt_2022)
+        self.assertEqual(m2022["upload_year"], 2022)
+
+        dt_2025 = datetime(2025, 1, 10, tzinfo=timezone.utc)
+        m2025 = calculate_video_metrics(view_count=1200, upload_date=dt_2025)
+        self.assertEqual(m2025["upload_year"], 2025)
+
+        # 2. Test min_views filter logic
+        crawler = YouTubeCrawler()
+        
+        # Test simulated channel processing with min_views filter
+        dummy_vids = [
+            {"id": "v1", "url": "https://youtube.com/watch?v=v1", "title": "Big Hit", "initial_view_count": 100000, "channel_name": "Canal"},
+            {"id": "v2", "url": "https://youtube.com/watch?v=v2", "title": "Low Views", "initial_view_count": 500, "channel_name": "Canal"},
+        ]
+        
+        crawler.get_channel_videos = lambda **kwargs: dummy_vids
+        crawler.get_video_deep_details = lambda url, **kwargs: {
+            "title": "Big Hit" if "v1" in url else "Low Views",
+            "channel_name": "Canal",
+            "thumbnail": "",
+            "view_count": 100000 if "v1" in url else 500,
+            "description": "contato@site123.com",
+            "pinned_comment": "",
+            "top_comments": [],
+            "upload_date": dt_2022,
+            "timestamp": None
+        }
+
+        # Run with min_views = 5000 -> only Big Hit should be processed!
+        res = crawler.process_channel(channel_identifier="@Canal", max_videos=10, min_views=5000)
+        processed_titles = [v["title"] for v in res["videos"]]
+        self.assertIn("Big Hit", processed_titles)
+        self.assertNotIn("Low Views", processed_titles)
+
 if __name__ == "__main__":
     unittest.main()
 

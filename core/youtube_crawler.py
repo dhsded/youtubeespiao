@@ -314,6 +314,7 @@ class YouTubeCrawler:
         self,
         channel_identifier: str,
         max_videos: int = 50,
+        min_views: int = 0,
         sort_by: str = "popular",
         hl: str = "pt",
         gl: str = "BR",
@@ -350,6 +351,13 @@ class YouTubeCrawler:
                 continue
             self.seen_video_ids.add(vid_id)
 
+            # Minimum views pre-filter
+            if min_views > 0:
+                init_views = v_item.get("initial_view_count")
+                if init_views is not None and init_views < min_views:
+                    logger.debug(f"Pre-filter skipped channel video below min views ({init_views} < {min_views}): {v_item.get('title')}")
+                    continue
+
             current_num = idx + 1
             if on_progress:
                 on_progress(current_num, max(total_found, max_videos), f"Canal {display_name} [{current_num}/{total_found}]: {v_item['title'][:32]}...")
@@ -359,14 +367,20 @@ class YouTubeCrawler:
 
             self._sleep_jitter()
 
-            deep_info = self.get_video_deep_details(v_item["url"], hl=hl, gl=gl)
+            deep_info = self.get_video_deep_details(v_item.get("url", ""), hl=hl, gl=gl)
             
-            title = deep_info["title"] or v_item["title"]
-            channel = deep_info["channel_name"] or v_item["channel_name"]
-            thumbnail = deep_info["thumbnail"] or v_item["thumbnail"]
-            view_count = deep_info["view_count"] or v_item["initial_view_count"]
-            description = deep_info["description"]
-            pinned_comment = deep_info["pinned_comment"]
+            title = deep_info.get("title") or v_item.get("title", "Sem Título")
+            channel = deep_info.get("channel_name") or v_item.get("channel_name", "Canal")
+            thumbnail = deep_info.get("thumbnail") or v_item.get("thumbnail", "")
+            view_count = deep_info.get("view_count") or v_item.get("initial_view_count") or 0
+
+            # Strict minimum views check
+            if min_views > 0 and view_count < min_views:
+                logger.debug(f"Skipped channel video below min views ({view_count} < {min_views}): {title}")
+                continue
+
+            description = deep_info.get("description", "")
+            pinned_comment = deep_info.get("pinned_comment", "")
             top_comments = deep_info.get("top_comments", [])
 
             metrics = calculate_video_metrics(
@@ -453,6 +467,7 @@ class YouTubeCrawler:
         keyword: str,
         target_lang: str = "pt",
         max_videos: int = 15,
+        min_views: int = 0,
         sort_by: str = "view_count",
         date_filter: str = "all_time",
         custom_year: Optional[int] = None,
@@ -476,6 +491,16 @@ class YouTubeCrawler:
         if on_progress:
             on_progress(0, max_videos, f"{target_info}Descobrindo termos relacionados e buscando vídeos...")
 
+        # Determine active year range if specified
+        active_year_range = None
+        if year_range:
+            active_year_range = (min(year_range), max(year_range))
+        elif date_filter.isdigit():
+            yr = int(date_filter)
+            active_year_range = (yr, yr)
+        elif custom_year:
+            active_year_range = (int(custom_year), int(custom_year))
+
         # 1. Learn real-time related search suggestions from YouTube Autocomplete
         related_suggestions = []
         if include_related or max_videos > 30:
@@ -491,19 +516,10 @@ class YouTubeCrawler:
 
         # 3. Initial Primary Search
         initial_videos = []
-        if date_filter.isdigit():
-            year_val = date_filter
-            search_term = f"{keyword} {year_val}"
-            initial_videos = self.search_videos(
-                search_term,
-                max_results=min(max_videos, 500),
-                sort_by=sort_by,
-                hl=hl,
-                gl=gl
-            )
-        elif date_filter == "custom_range" and year_range:
-            start_yr, end_yr = year_range
-            per_year_limit = max(5, int(max_videos / max(1, (end_yr - start_yr + 1))))
+        if active_year_range:
+            start_yr, end_yr = active_year_range
+            num_years = max(1, (end_yr - start_yr + 1))
+            per_year_limit = 5000 if max_videos >= 50000 else max(10, int(max_videos / num_years) + 5)
             for yr in range(end_yr, start_yr - 1, -1):
                 if self._is_stopped:
                     break
@@ -516,9 +532,10 @@ class YouTubeCrawler:
                 )
                 initial_videos.extend(yr_videos)
         else:
+            search_limit = 5000 if max_videos >= 50000 else min(max_videos, 500)
             initial_videos = self.search_videos(
                 keyword,
-                max_results=min(max_videos, 500),
+                max_results=search_limit,
                 sort_by=sort_by,
                 upload_date=date_filter if date_filter in ("today", "this_week", "this_month", "this_year") else None,
                 hl=hl,
@@ -540,13 +557,28 @@ class YouTubeCrawler:
                 if on_progress:
                     on_progress(len(scanned_videos), max_videos, f"{target_info}Buscando termo relacionado: '{next_rel_term}'...")
                 
-                rel_vids = self.search_videos(
-                    keyword=next_rel_term,
-                    max_results=min(max_videos - len(scanned_videos), 300),
-                    sort_by=sort_by,
-                    hl=hl,
-                    gl=gl
-                )
+                if active_year_range:
+                    start_yr, end_yr = active_year_range
+                    rel_vids = []
+                    for yr in range(end_yr, start_yr - 1, -1):
+                        if self._is_stopped:
+                            break
+                        rel_vids.extend(self.search_videos(
+                            keyword=f"{next_rel_term} {yr}",
+                            max_results=min(max_videos - len(scanned_videos), 300),
+                            sort_by=sort_by,
+                            hl=hl,
+                            gl=gl
+                        ))
+                else:
+                    rel_vids = self.search_videos(
+                        keyword=next_rel_term,
+                        max_results=min(max_videos - len(scanned_videos), 300),
+                        sort_by=sort_by,
+                        upload_date=date_filter if date_filter in ("today", "this_week", "this_month", "this_year") else None,
+                        hl=hl,
+                        gl=gl
+                    )
                 initial_videos.extend(rel_vids)
                 if not initial_videos and not related_suggestions_queue:
                     break
@@ -562,6 +594,13 @@ class YouTubeCrawler:
             self.seen_video_ids.add(vid_id)
 
             processed_index += 1
+
+            # Minimum Views Pre-filter (Discards early before performing network requests)
+            if min_views > 0:
+                init_views = v_item.get("initial_view_count")
+                if init_views is not None and init_views < min_views:
+                    logger.debug(f"Pre-filter skipped video below min views ({init_views} < {min_views}): {v_item.get('title')}")
+                    continue
 
             # Quick pre-filter check on title relevance before deep scraping
             if not is_content_relevant_to_topic(
@@ -584,14 +623,20 @@ class YouTubeCrawler:
             self._sleep_jitter()
 
             # Deep extraction with language headers
-            deep_info = self.get_video_deep_details(v_item["url"], hl=hl, gl=gl)
+            deep_info = self.get_video_deep_details(v_item.get("url", ""), hl=hl, gl=gl)
             
-            title = deep_info["title"] or v_item["title"]
-            channel = deep_info["channel_name"] or v_item["channel_name"]
-            thumbnail = deep_info["thumbnail"] or v_item["thumbnail"]
-            view_count = deep_info["view_count"] or v_item["initial_view_count"]
-            description = deep_info["description"]
-            pinned_comment = deep_info["pinned_comment"]
+            title = deep_info.get("title") or v_item.get("title", "Sem Título")
+            channel = deep_info.get("channel_name") or v_item.get("channel_name", "Canal")
+            thumbnail = deep_info.get("thumbnail") or v_item.get("thumbnail", "")
+            view_count = deep_info.get("view_count") or v_item.get("initial_view_count") or 0
+            
+            # Strict Minimum Views Check
+            if min_views > 0 and view_count < min_views:
+                logger.debug(f"Skipped video below min views ({view_count} < {min_views}): {title}")
+                continue
+
+            description = deep_info.get("description", "")
+            pinned_comment = deep_info.get("pinned_comment", "")
             top_comments = deep_info.get("top_comments", [])
 
             # High-Precision Multi-Layer Language Verification
@@ -626,6 +671,14 @@ class YouTubeCrawler:
                 published_text=v_item.get("published_text"),
                 video_id=v_item.get("id")
             )
+
+            # Strict Year Range Enforcement (respects specified interval even with 'all videos' option)
+            if active_year_range:
+                start_yr, end_yr = active_year_range
+                v_year = metrics.get("upload_year")
+                if v_year is not None and (v_year < start_yr or v_year > end_yr):
+                    logger.debug(f"Skipped video outside year range {start_yr}-{end_yr} (upload_year={v_year}): {title}")
+                    continue
 
             # Extract domains and Instagrams from Pinned Comment, Description, and other Comments
             pinned_domains = self.extractor.process_text_for_domains(pinned_comment, source_location="📌 Comentário Fixado") if pinned_comment else []
