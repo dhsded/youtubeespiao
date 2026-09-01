@@ -322,7 +322,10 @@ QPushButton#btn_table_action {
     color: #38BDF8;
     border: 1px solid #0284C7;
     font-weight: 700;
-    padding: 4px 10px;
+    font-size: 11px;
+    padding: 3px 8px;
+    border-radius: 4px;
+    min-height: 26px;
 }
 
 QPushButton#btn_table_action:hover {
@@ -331,15 +334,35 @@ QPushButton#btn_table_action:hover {
 }
 
 QPushButton#btn_table_buy {
-    background-color: #059669;
-    color: #FFFFFF;
+    background-color: #065F46;
+    color: #34D399;
     border: 1px solid #10B981;
     font-weight: 700;
-    padding: 4px 10px;
+    font-size: 11px;
+    padding: 3px 8px;
+    border-radius: 4px;
+    min-height: 26px;
 }
 
 QPushButton#btn_table_buy:hover {
     background-color: #10B981;
+    color: #FFFFFF;
+}
+
+QPushButton#btn_table_purple {
+    background-color: #3B0764;
+    color: #C084FC;
+    border: 1px solid #8B5CF6;
+    font-weight: 700;
+    font-size: 11px;
+    padding: 3px 8px;
+    border-radius: 4px;
+    min-height: 26px;
+}
+
+QPushButton#btn_table_purple:hover {
+    background-color: #8B5CF6;
+    color: #FFFFFF;
 }
 
 /* Tables */
@@ -348,22 +371,22 @@ QTableWidget {
     color: #F8FAFC;
     gridline-color: #1E293B;
     border: 1px solid #222F44;
-    border-radius: 6px;
+    border-radius: 8px;
     selection-background-color: #1E3A8A;
     selection-color: #FFFFFF;
 }
 
 QTableWidget::item {
-    padding: 6px;
+    padding: 4px 8px;
     color: #F8FAFC;
 }
 
 QHeaderView::section {
     background-color: #131B2A;
     color: #94A3B8;
-    padding: 8px;
+    padding: 6px 8px;
     font-weight: 700;
-    font-size: 12px;
+    font-size: 11px;
     border: 1px solid #222F44;
     text-transform: uppercase;
 }
@@ -727,7 +750,10 @@ QPushButton#btn_table_action {
     color: #0284C7;
     border: 1px solid #BAE6FD;
     font-weight: 800;
-    padding: 4px 10px;
+    font-size: 11px;
+    padding: 3px 8px;
+    border-radius: 4px;
+    min-height: 26px;
 }
 
 QPushButton#btn_table_action:hover {
@@ -736,15 +762,35 @@ QPushButton#btn_table_action:hover {
 }
 
 QPushButton#btn_table_buy {
-    background-color: #16A34A;
-    color: #FFFFFF;
-    border: 1px solid #15803D;
+    background-color: #DCFCE7;
+    color: #15803D;
+    border: 1px solid #86EFAC;
     font-weight: 800;
-    padding: 4px 10px;
+    font-size: 11px;
+    padding: 3px 8px;
+    border-radius: 4px;
+    min-height: 26px;
 }
 
 QPushButton#btn_table_buy:hover {
-    background-color: #15803D;
+    background-color: #16A34A;
+    color: #FFFFFF;
+}
+
+QPushButton#btn_table_purple {
+    background-color: #F3E8FF;
+    color: #7E22CE;
+    border: 1px solid #D8B4FE;
+    font-weight: 800;
+    font-size: 11px;
+    padding: 3px 8px;
+    border-radius: 4px;
+    min-height: 26px;
+}
+
+QPushButton#btn_table_purple:hover {
+    background-color: #7E22CE;
+    color: #FFFFFF;
 }
 
 /* Tables */

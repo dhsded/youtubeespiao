@@ -17,25 +17,41 @@ from core.translator import expand_queries_for_language, translate_query, AVAILA
 class TestYoutubeEspiaoCore(unittest.TestCase):
 
     def test_metrics_calculator(self):
-        """Test calculation of hourly, daily, monthly, 90-day, and annual view averages."""
-        # 1. Recent video (10 days old)
+        """Test calculation of hourly (VPH), daily, monthly, 90-day, and annual view averages."""
+        # 1. Very recent video (2 hours old) -> Exact launch VPH
+        two_hours_ago = datetime.now(timezone.utc) - timedelta(hours=2)
+        metrics_new = calculate_video_metrics(view_count=10000, upload_date=two_hours_ago)
+        self.assertAlmostEqual(metrics_new["hourly_views"], 5000.0, delta=250.0)
+        self.assertEqual(metrics_new["velocity_badge"], "🔥 Viral em Alta")
+
+        # 2. Recent video (10 days old)
         ten_days_ago = datetime.now(timezone.utc) - timedelta(days=10)
         metrics = calculate_video_metrics(view_count=24000, upload_date=ten_days_ago)
 
         self.assertEqual(metrics["view_count"], 24000)
         self.assertEqual(metrics["views_90d"], 24000)
-        self.assertAlmostEqual(metrics["daily_views"], 2400.0, delta=20.0)
-        self.assertAlmostEqual(metrics["hourly_views"], 100.0, delta=2.0)
-        self.assertGreater(metrics["monthly_views"], 70000)
-        self.assertGreater(metrics["yearly_views"], 800000)
+        self.assertAlmostEqual(metrics["lifetime_daily_views"], 2400.0, delta=50.0)
+        self.assertAlmostEqual(metrics["daily_views"], 1712.7, delta=50.0)
+        self.assertGreater(metrics["hourly_views"], 60.0)
+        self.assertLess(metrics["hourly_views"], 100.0)
+        self.assertGreater(metrics["monthly_views"], 40000)
         self.assertIn("24K", metrics["view_count_formatted"])
 
-        # 2. Older video (365 days old with decay & evergreen 90d traffic)
+        # 3. Relative text parsing for Portuguese & English
+        from core.metrics_calculator import parse_relative_time_text
+        self.assertAlmostEqual(parse_relative_time_text("há 3 horas"), 0.125, delta=0.02)
+        self.assertAlmostEqual(parse_relative_time_text("há 5 dias"), 5.0, delta=0.1)
+        self.assertAlmostEqual(parse_relative_time_text("há 2 semanas"), 14.0, delta=0.1)
+        self.assertAlmostEqual(parse_relative_time_text("2 months ago"), 60.83, delta=1.0)
+        self.assertAlmostEqual(parse_relative_time_text("há 1 ano"), 365.25, delta=5.0)
+
+        # 4. Older video (365 days old with calibrated evergreen 90d traffic)
         one_year_ago = datetime.now(timezone.utc) - timedelta(days=365)
         metrics_old = calculate_video_metrics(view_count=500000, upload_date=one_year_ago)
-        self.assertGreater(metrics_old["views_90d"], 20000)
-        self.assertLess(metrics_old["views_90d"], 500000)
-        self.assertGreater(metrics_old["hourly_views"], 5.0)
+        self.assertGreater(metrics_old["views_90d"], 5000)
+        self.assertLess(metrics_old["views_90d"], 50000)
+        self.assertGreater(metrics_old["hourly_views"], 2.0)
+        self.assertLess(metrics_old["hourly_views"], 20.0)
 
     def test_format_number(self):
         """Test human readable number formatting."""
@@ -544,5 +560,226 @@ class TestYoutubeEspiaoCore(unittest.TestCase):
 
         InstanceManager.release_instance()
 
+    def test_youtube_related_suggestions(self):
+        """Test YouTube autocomplete and related search terms harvester."""
+        from core.relevance_filter import get_youtube_related_suggestions
+        suggestions = get_youtube_related_suggestions("dropshipping", hl="pt", gl="BR", max_suggestions=10)
+        self.assertIsInstance(suggestions, list)
+        self.assertGreaterEqual(len(suggestions), 1)
+        self.assertTrue(any("dropshipping" in s.lower() for s in suggestions))
+
+    def test_topic_profile_and_relevance_filter(self):
+        """Test semantic topic profile building and strict relevance filtering to prevent topic drift."""
+        from core.relevance_filter import build_topic_profile, is_content_relevant_to_topic, calculate_relevance_score
+
+        # Build profile for 'dropshipping'
+        profile_drop = build_topic_profile("dropshipping", related_terms=[
+            "dropshipping do zero", "dropshipping shopify", "dropshipping como comecar", "fornecedores dropshipping"
+        ])
+        self.assertIn("dropshipping", profile_drop["primary_tokens"])
+
+        # 1. On-topic video -> Must be APPROVED
+        drop_video_title = "Como fazer Dropshipping do Zero em 2026 - Passo a Passo Completo"
+        drop_video_desc = "Aprenda a criar sua loja de dropshipping com Shopify e encontrar fornecedores."
+        self.assertTrue(is_content_relevant_to_topic(
+            title=drop_video_title,
+            description=drop_video_desc,
+            channel_name="Empreendedor Digital",
+            topic_profile=profile_drop
+        ))
+
+        # 2. Off-topic viral drift video (e.g. Minecraft / Funk / Pranks) -> Must be REJECTED
+        off_topic_title = "COMPREI UM CARRO NOVO E OLHA NO QUE DEU!! (TROLLAGEM ÉPICA)"
+        off_topic_desc = "Fui na loja e comprei um carro esportivo para zoar meus amigos."
+        self.assertFalse(is_content_relevant_to_topic(
+            title=off_topic_title,
+            description=off_topic_desc,
+            channel_name="Canal de Pegadinhas",
+            topic_profile=profile_drop
+        ))
+
+        # 3. Test multi-word topic: 'marketing digital'
+        profile_mkt = build_topic_profile("marketing digital", related_terms=[
+            "marketing digital para iniciantes", "marketing digital trafego pago", "marketing digital afiliados"
+        ])
+        self.assertTrue(is_content_relevant_to_topic(
+            title="Tudo sobre Marketing Digital e Tráfego Pago para Vender Mais",
+            description="Curso grátis de marketing digital e gestão de tráfego.",
+            channel_name="Mestre do Marketing",
+            topic_profile=profile_mkt
+        ))
+        
+        # Off-topic video for marketing digital
+        self.assertFalse(is_content_relevant_to_topic(
+            title="Joguei GTA RP e virei chefe da polícia",
+            description="Gameplay completa no melhor servidor de GTA 5 do Brasil.",
+            channel_name="GamerBR",
+            topic_profile=profile_mkt
+        ))
+
+    def test_100k_video_limits_config(self):
+        """Test spinbox and unlimited limits configured for up to 100,000 videos."""
+        from PyQt6.QtWidgets import QApplication
+        import sys
+        app = QApplication.instance() or QApplication(sys.argv)
+        from ui.hunter_tab import HunterTab
+
+        hunter = HunterTab()
+        self.assertEqual(hunter.spin_max.maximum(), 100000)
+        self.assertEqual(hunter.spin_max.minimum(), 5)
+        
+        # Test unlimited toggle
+        hunter.chk_unlimited.setChecked(True)
+        self.assertFalse(hunter.spin_max.isEnabled())
+        hunter.chk_unlimited.setChecked(False)
+        self.assertTrue(hunter.spin_max.isEnabled())
+
+    def test_video_table_domain_search(self):
+        """Test searching a domain name filters all videos containing that expired domain."""
+        from PyQt6.QtWidgets import QApplication
+        import sys
+        app = QApplication.instance() or QApplication(sys.argv)
+        from ui.video_table_model import VideoTableView
+
+        table = VideoTableView()
+        sample_vids = [
+            {
+                "id": "vid1",
+                "title": "Aprenda Marketing",
+                "channel_name": "Canal 1",
+                "metrics": {"view_count": 1000, "view_count_formatted": "1K"},
+                "domains": [{"root_domain": "curso-expirado.com.br", "display_name": "curso-expirado.com.br", "status": "Disponível"}]
+            },
+            {
+                "id": "vid2",
+                "title": "Tutorial Python",
+                "channel_name": "Canal 2",
+                "metrics": {"view_count": 5000, "view_count_formatted": "5K"},
+                "domains": [{"root_domain": "outro-site.com", "display_name": "outro-site.com", "status": "Ativo"}]
+            }
+        ]
+        table.set_videos(sample_vids)
+        self.assertEqual(len(table.filtered_videos_data), 2)
+
+        # Search by domain name -> Must filter to vid1 only
+        table.set_search_query("curso-expirado")
+        self.assertEqual(len(table.filtered_videos_data), 1)
+        self.assertEqual(table.filtered_videos_data[0]["id"], "vid1")
+
+        # Clear search
+        table.set_search_query("")
+        self.assertEqual(len(table.filtered_videos_data), 2)
+
+    def test_trademark_validator(self):
+        """Test detection of famous trademarks and classification of safe generic domains."""
+        from core.trademark_validator import analyze_trademark_risk
+
+        # 1. Renowned Brazilian Brand (INPI) -> High Risk
+        res_ml = analyze_trademark_risk("ofertas-mercadolivre.com.br")
+        self.assertFalse(res_ml["is_safe"])
+        self.assertEqual(res_ml["risk_level"], "HIGH_RISK")
+        self.assertIn("Mercado Livre", res_ml["detected_brands"])
+        self.assertIn("CYBERSQUATTING", res_ml["legal_advice"])
+
+        # 2. Renowned Bank (Nubank) -> High Risk
+        res_nu = analyze_trademark_risk("cartoesnubank.com")
+        self.assertFalse(res_nu["is_safe"])
+        self.assertIn("Nubank", res_nu["detected_brands"])
+
+        # 3. Global Big Tech (Apple) -> High Risk
+        res_apple = analyze_trademark_risk("suporteapple.net")
+        self.assertFalse(res_apple["is_safe"])
+        self.assertTrue(any("Apple" in b for b in res_apple["detected_brands"]))
+
+        # 4. Safe Generic / Niche Domain -> Safe
+        res_generic = analyze_trademark_risk("dicasdejardinagem123.com.br")
+        self.assertTrue(res_generic["is_safe"])
+        self.assertEqual(res_generic["risk_level"], "SAFE")
+        self.assertEqual(len(res_generic["detected_brands"]), 0)
+        self.assertIn("DOMÍNIO SEGURO", res_generic["legal_advice"])
+
+        # 5. Safe Generic English Domain -> Safe
+        res_en = analyze_trademark_risk("digitalmarketingtipsfree.com")
+        self.assertTrue(res_en["is_safe"])
+        self.assertEqual(res_en["risk_level"], "SAFE")
+
+    def test_trademark_validator_comprehensive_database(self):
+        """Test detection across all 12 trademark categories and anti-false-positive whitelist."""
+        from core.trademark_validator import analyze_trademark_risk
+
+        # 1. Betting / Casas de Apostas
+        self.assertFalse(analyze_trademark_risk("bet365bonus.com")["is_safe"])
+        self.assertFalse(analyze_trademark_risk("betanobrasil.bet")["is_safe"])
+        self.assertFalse(analyze_trademark_risk("pixbetapostas.com")["is_safe"])
+        self.assertFalse(analyze_trademark_risk("blaze-login.com")["is_safe"])
+        self.assertFalse(analyze_trademark_risk("esportesdasorte.online")["is_safe"])
+
+        # 2. AI & Big Tech
+        self.assertFalse(analyze_trademark_risk("deepseekapp.com")["is_safe"])
+        self.assertFalse(analyze_trademark_risk("chatgptlogin.net")["is_safe"])
+        self.assertFalse(analyze_trademark_risk("claudeai-brasil.com")["is_safe"])
+        self.assertFalse(analyze_trademark_risk("midjourneycursos.com")["is_safe"])
+
+        # 3. Infoprodutos & EdTech
+        self.assertFalse(analyze_trademark_risk("hotmartafiliados.com")["is_safe"])
+        self.assertFalse(analyze_trademark_risk("kiwifycursos.com.br")["is_safe"])
+        self.assertFalse(analyze_trademark_risk("aluracursos.com")["is_safe"])
+        self.assertFalse(analyze_trademark_risk("descomplicaaulas.com")["is_safe"])
+
+        # 4. Anti-False-Positive Shield (Generic Dictionary Whitelist)
+        self.assertTrue(analyze_trademark_risk("otimizacao.com.br")["is_safe"])
+        self.assertTrue(analyze_trademark_risk("cabelos.com")["is_safe"])
+        self.assertTrue(analyze_trademark_risk("algoritmo.com.br")["is_safe"])
+        self.assertTrue(analyze_trademark_risk("modelo.com")["is_safe"])
+        self.assertTrue(analyze_trademark_risk("claridade.com.br")["is_safe"])
+        self.assertTrue(analyze_trademark_risk("valente.com")["is_safe"])
+        self.assertTrue(analyze_trademark_risk("extraordinario.com")["is_safe"])
+        self.assertTrue(analyze_trademark_risk("internacional.com.br")["is_safe"])
+
+        # 5. Typosquatting & Homoglyphs
+        res_typo1 = analyze_trademark_risk("mercadolvre.com")
+        self.assertFalse(res_typo1["is_safe"])
+        self.assertEqual(res_typo1["risk_level"], "MODERATE_RISK")
+
+        res_typo2 = analyze_trademark_risk("whatsap.com")
+        self.assertFalse(res_typo2["is_safe"])
+
+        res_homoglyph = analyze_trademark_risk("faceb00k.com")
+        self.assertFalse(res_homoglyph["is_safe"])
+
+    def test_recent_vph_and_traffic_vitality(self):
+        """Test Recent VPH modeling: launch viral vs active evergreen vs dead video."""
+        from core.metrics_calculator import calculate_video_metrics, format_vph
+
+        # 1. Launch Viral video (24h, 2400 views)
+        one_day_ago = datetime.now(timezone.utc) - timedelta(days=1)
+        m_launch = calculate_video_metrics(view_count=2400, upload_date=one_day_ago)
+        self.assertAlmostEqual(m_launch["hourly_views"], 100.0, delta=5.0)
+        self.assertEqual(m_launch["velocity_badge"], "🔥 Viral em Alta")
+        self.assertTrue(m_launch["is_active_traffic"])
+
+        # 2. High-traffic Active Evergreen video (3 years old, 3,000,000 views)
+        three_years_ago = datetime.now(timezone.utc) - timedelta(days=1095)
+        m_evergreen = calculate_video_metrics(view_count=3000000, upload_date=three_years_ago)
+        self.assertGreaterEqual(m_evergreen["hourly_views"], 3.0)
+        self.assertLessEqual(m_evergreen["hourly_views"], 15.0)
+        self.assertEqual(m_evergreen["velocity_badge"], "🟢 Tráfego Ativo (Evergreen)")
+        self.assertTrue(m_evergreen["is_active_traffic"])
+
+        # 3. Dead / Stagnant video (5 years old, 5,000 views)
+        five_years_ago = datetime.now(timezone.utc) - timedelta(days=1825)
+        m_dead = calculate_video_metrics(view_count=5000, upload_date=five_years_ago)
+        self.assertLess(m_dead["hourly_views"], 0.2)
+        self.assertEqual(m_dead["velocity_badge"], "⚪ Tráfego Estagnado")
+        self.assertFalse(m_dead["is_active_traffic"])
+
+        # 4. Format VPH
+        self.assertEqual(format_vph(125.4), "⚡ 125 VPH")
+        self.assertEqual(format_vph(14.8), "⚡ 14.8 VPH")
+        self.assertEqual(format_vph(5.4), "⚡ 5.4 VPH")
+        self.assertEqual(format_vph(0.76), "⚡ 0.76 VPH")
+        self.assertEqual(format_vph(0.01), "⚡ < 0.1 VPH")
+
 if __name__ == "__main__":
     unittest.main()
+

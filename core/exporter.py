@@ -18,6 +18,7 @@ from PyQt6.QtGui import QPdfWriter, QTextDocument, QPageSize, QPageLayout
 from PyQt6.QtCore import QMarginsF
 
 from core.metrics_calculator import format_number
+from core.trademark_validator import analyze_trademark_risk
 
 class DataExporter:
     @classmethod
@@ -51,15 +52,20 @@ class DataExporter:
             tot_daily = item.get("total_daily_views", v_metrics.get("daily_views", 0))
             tot_views = item.get("total_view_count", v_metrics.get("view_count", 0))
             tot_90d = item.get("total_views_90d", v_metrics.get("views_90d", tot_views))
+            display_name = item.get("display_name") or item.get("root_domain") or ""
+            tm = item.get("trademark_risk") or analyze_trademark_risk(display_name)
             
             rows.append({
                 "Tipo": "Instagram" if item.get("is_instagram") else "Domínio Web",
-                "Domínio / Conta": item.get("display_name") or item.get("root_domain"),
+                "Domínio / Conta": display_name,
                 "Status": item.get("status"),
+                "Segurança de Marca": tm.get("badge_short", "🟢 Seguro"),
+                "Risco Jurídico / INPI": tm.get("badge", "🟢 Seguro p/ Registro"),
                 "Vídeos Presente (Qtd)": v_cnt,
                 "Soma Tráfego Diário (Views/Dia)": tot_daily,
                 "Soma Views 90 Dias": tot_90d,
                 "Soma Visualizações Totais": tot_views,
+                "Parecer Jurídico": tm.get("legal_advice", ""),
                 "Detalhes": item.get("details"),
                 "Título do Vídeo Principal": item.get("video_title"),
                 "Canal": item.get("channel_name"),

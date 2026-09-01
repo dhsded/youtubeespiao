@@ -6,6 +6,7 @@ Features:
 - System Tray Minimization: Allows the app to run seamlessly in the background with notifications.
 """
 
+import sys
 import os
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -127,7 +128,10 @@ class MainWindow(QMainWindow):
 
     def _create_tray_icon_with_badge(self, instance_num: int) -> QIcon:
         """Dynamically render a crisp, high-visibility instance number badge onto the system tray icon."""
-        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        if getattr(sys, 'frozen', False):
+            base_dir = getattr(sys, '_MEIPASS', os.path.dirname(sys.executable))
+        else:
+            base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         icon_path = os.path.join(base_dir, "assets", "icon.png")
         if not os.path.exists(icon_path):
             icon_path = "assets/icon.png"

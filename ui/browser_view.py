@@ -246,28 +246,10 @@ class LiveMonitorCard(QWidget):
             self.lbl_domains_badge.setText("💎 Oportunidades: Analisando links na descrição...")
 
         # Re-fetch thumbnail smoothly without DOM teardowns
-        self.thumb_label.url = thumb_url
-        if thumb_url and AsyncThumbnailLabel._net_manager:
-            if thumb_url in AsyncThumbnailLabel._pixmap_cache:
-                self.thumb_label.setPixmap(AsyncThumbnailLabel._pixmap_cache[thumb_url])
-            else:
-                req = QNetworkRequest(QUrl(thumb_url))
-                reply = AsyncThumbnailLabel._net_manager.get(req)
-                reply.finished.connect(lambda r=reply, u=thumb_url, lbl=self.thumb_label: self._on_thumb_loaded(r, u, lbl))
-
-    def _on_thumb_loaded(self, reply: QNetworkReply, url: str, label: QLabel):
-        if reply.error() == QNetworkReply.NetworkError.NoError:
-            data = reply.readAll()
-            pixmap = QPixmap()
-            if pixmap.loadFromData(data):
-                scaled = pixmap.scaled(
-                    440, 247,
-                    Qt.AspectRatioMode.KeepAspectRatioByExpanding,
-                    Qt.TransformationMode.SmoothTransformation
-                )
-                AsyncThumbnailLabel._pixmap_cache[url] = scaled
-                label.setPixmap(scaled)
-        reply.deleteLater()
+        if thumb_url:
+            self.thumb_label.load_thumbnail(thumb_url)
+        else:
+            self.thumb_label.setText("Sem Foto")
 
 
 class BrowserView(QWidget):

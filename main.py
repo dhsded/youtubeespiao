@@ -87,7 +87,10 @@ def main():
     app.setQuitOnLastWindowClosed(False)
 
     # Set App Icon
-    base_dir = os.path.dirname(os.path.abspath(__file__))
+    if getattr(sys, 'frozen', False):
+        base_dir = getattr(sys, '_MEIPASS', os.path.dirname(sys.executable))
+    else:
+        base_dir = os.path.dirname(os.path.abspath(__file__))
     icon_path = os.path.join(base_dir, "assets", "icon.png")
     if os.path.exists(icon_path):
         app_icon = QIcon(icon_path)

@@ -17,6 +17,8 @@ from typing import Dict, Any, Optional
 import requests
 import dns.resolver
 
+from core.trademark_validator import analyze_trademark_risk
+
 logger = logging.getLogger(__name__)
 
 STATUS_AVAILABLE = "Disponível"   # 🟢 Expirado / 100% Livre para registro
@@ -426,6 +428,9 @@ class DomainValidator:
             buy_link = f"https://www.namecheap.com/domains/registration/results/?domain={domain}"
             registrar_name = "Namecheap / GoDaddy"
 
+        # 6. Trademark & Brand Safety Analysis
+        tm_risk = analyze_trademark_risk(domain)
+
         result = {
             "domain": domain,
             "status": final_status,
@@ -437,7 +442,8 @@ class DomainValidator:
             "ip_records": dns_info["ip_records"],
             "expires_at": reg_info.get("expires_at"),
             "buy_link": buy_link,
-            "registrar_name": registrar_name
+            "registrar_name": registrar_name,
+            "trademark_risk": tm_risk
         }
 
         self._cache[domain] = result

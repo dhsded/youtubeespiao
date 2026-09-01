@@ -20,6 +20,7 @@ test_report.pdf
 *.log
 .coverage
 .pytest_cache/
+scratch/
 
 # OS metadata
 Thumbs.db

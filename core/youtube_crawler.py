@@ -25,6 +25,11 @@ from core.metrics_calculator import calculate_video_metrics
 from core.domain_extractor import DomainExtractor
 from core.domain_validator import DomainValidator
 from core.translator import is_content_matching_language
+from core.relevance_filter import (
+    get_youtube_related_suggestions,
+    build_topic_profile,
+    is_content_relevant_to_topic
+)
 
 logger = logging.getLogger(__name__)
 
@@ -368,7 +373,8 @@ class YouTubeCrawler:
                 view_count=view_count,
                 upload_date=deep_info["upload_date"],
                 timestamp=deep_info["timestamp"],
-                published_text=v_item.get("published_text")
+                published_text=v_item.get("published_text"),
+                video_id=v_item.get("id")
             )
 
             pinned_domains = self.extractor.process_text_for_domains(pinned_comment, source_location="📌 Comentário Fixado") if pinned_comment else []
@@ -461,23 +467,36 @@ class YouTubeCrawler:
         on_progress: Optional[Callable[[int, int, str], None]] = None
     ) -> Dict[str, Any]:
         """
-        Processes a keyword prioritized by views with real-time browser signals and related video expansion.
+        Processes a keyword prioritized by views with real-time browser signals,
+        intelligent related terms learning (YouTube Suggest) and strict semantic relevance filtering.
         """
         self._is_stopped = False
         
         target_info = f"{display_label} - " if display_label else ""
         if on_progress:
-            on_progress(0, max_videos, f"{target_info}Buscando vídeos mais vistos para: '{keyword}'...")
+            on_progress(0, max_videos, f"{target_info}Descobrindo termos relacionados e buscando vídeos...")
 
+        # 1. Learn real-time related search suggestions from YouTube Autocomplete
+        related_suggestions = []
+        if include_related or max_videos > 30:
+            try:
+                related_suggestions = get_youtube_related_suggestions(keyword, hl=hl, gl=gl, max_suggestions=25)
+                if related_suggestions and on_progress:
+                    on_progress(0, max_videos, f"{target_info}🔗 {len(related_suggestions)} termos relacionados aprendidos no YouTube...")
+            except Exception as e:
+                logger.debug(f"Error fetching related suggestions for '{keyword}': {e}")
+
+        # 2. Build Semantic Topic Profile for strict relevance gating
+        topic_profile = build_topic_profile(keyword, related_terms=related_suggestions)
+
+        # 3. Initial Primary Search
         initial_videos = []
-
-        # 1. Check if user specified a specific year (e.g. 2024) or year range (e.g. 2020..2026)
         if date_filter.isdigit():
             year_val = date_filter
             search_term = f"{keyword} {year_val}"
             initial_videos = self.search_videos(
                 search_term,
-                max_results=max_videos,
+                max_results=min(max_videos, 500),
                 sort_by=sort_by,
                 hl=hl,
                 gl=gl
@@ -499,7 +518,7 @@ class YouTubeCrawler:
         else:
             initial_videos = self.search_videos(
                 keyword,
-                max_results=max_videos,
+                max_results=min(max_videos, 500),
                 sort_by=sort_by,
                 upload_date=date_filter if date_filter in ("today", "this_week", "this_month", "this_year") else None,
                 hl=hl,
@@ -509,9 +528,31 @@ class YouTubeCrawler:
         scanned_videos = []
         all_domains = []
         processed_index = 0
+        related_suggestions_queue = list(related_suggestions)
 
-        while initial_videos and len(scanned_videos) < max_videos:
+        while (initial_videos or related_suggestions_queue) and len(scanned_videos) < max_videos:
             if self._is_stopped:
+                break
+
+            # If current batch is empty or low, fetch from next learned related suggestion
+            if not initial_videos and related_suggestions_queue and len(scanned_videos) < max_videos:
+                next_rel_term = related_suggestions_queue.pop(0)
+                if on_progress:
+                    on_progress(len(scanned_videos), max_videos, f"{target_info}Buscando termo relacionado: '{next_rel_term}'...")
+                
+                rel_vids = self.search_videos(
+                    keyword=next_rel_term,
+                    max_results=min(max_videos - len(scanned_videos), 300),
+                    sort_by=sort_by,
+                    hl=hl,
+                    gl=gl
+                )
+                initial_videos.extend(rel_vids)
+                if not initial_videos and not related_suggestions_queue:
+                    break
+                continue
+
+            if not initial_videos:
                 break
 
             v_item = initial_videos.pop(0)
@@ -521,6 +562,17 @@ class YouTubeCrawler:
             self.seen_video_ids.add(vid_id)
 
             processed_index += 1
+
+            # Quick pre-filter check on title relevance before deep scraping
+            if not is_content_relevant_to_topic(
+                title=v_item.get("title", ""),
+                description="",
+                channel_name=v_item.get("channel_name", ""),
+                topic_profile=topic_profile,
+                min_score_threshold=15.0
+            ):
+                logger.debug(f"Pre-filter skipped off-topic video: {v_item.get('title')}")
+                continue
 
             if on_progress:
                 on_progress(len(scanned_videos) + 1, max_videos, f"{target_info}Analisando [{len(scanned_videos)+1}/{max_videos}]: {v_item['title'][:35]}...")
@@ -555,35 +607,24 @@ class YouTubeCrawler:
                     # Video is in foreign language (e.g. Spanish, English), strictly skip
                     continue
 
-            # Recursive Related Videos Harvest: Discover related videos in the exact niche cluster
-            if include_related and len(scanned_videos) + len(initial_videos) < max_videos * 2:
-                try:
-                    rel_query = f"{title[:45]}"
-                    rel_vids = self.search_videos(
-                        keyword=rel_query,
-                        max_results=3,
-                        sort_by="view_count",
-                        hl=hl,
-                        gl=gl
-                    )
-                    for r_vid in rel_vids:
-                        r_id = r_vid.get("id")
-                        if r_id and r_id not in self.seen_video_ids:
-                            # Quick check on related video title
-                            if target_lang and target_lang not in ("global", "auto", "en"):
-                                if is_content_matching_language(r_vid.get("title", ""), "", r_vid.get("channel_name", ""), target_lang):
-                                    initial_videos.append(r_vid)
-                            else:
-                                initial_videos.append(r_vid)
-                except Exception as e:
-                    logger.debug(f"Related videos fetch error: {e}")
+            # Strict Semantic Topic Relevance Verification
+            if not is_content_relevant_to_topic(
+                title=title,
+                description=description,
+                channel_name=channel,
+                topic_profile=topic_profile,
+                min_score_threshold=20.0
+            ):
+                logger.info(f"Filtered out off-topic video: '{title}' (Channel: {channel})")
+                continue
 
             # Calculate views metrics (hourly, daily, monthly, yearly, publish date)
             metrics = calculate_video_metrics(
                 view_count=view_count,
                 upload_date=deep_info["upload_date"],
                 timestamp=deep_info["timestamp"],
-                published_text=v_item.get("published_text")
+                published_text=v_item.get("published_text"),
+                video_id=v_item.get("id")
             )
 
             # Extract domains and Instagrams from Pinned Comment, Description, and other Comments
@@ -649,6 +690,10 @@ class YouTubeCrawler:
 
             if on_video_processed:
                 on_video_processed(video_record)
+
+            # Periodic garbage collection every 200 videos to preserve low memory footprint
+            if len(scanned_videos) % 200 == 0:
+                gc.collect()
 
         # Primary sort: Highest view counts first
         scanned_videos.sort(key=lambda x: x["metrics"]["view_count"], reverse=True)

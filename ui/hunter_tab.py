@@ -343,6 +343,7 @@ class HunterTab(QWidget):
         self.domain_table.buy_domain_requested.connect(self._on_buy_domain_requested)
         self.domain_table.open_video_requested.connect(self._on_open_video_requested)
         self.domain_table.domain_excluded_requested.connect(self._on_domain_excluded)
+        self.domain_table.filter_videos_by_domain_requested.connect(self._on_filter_videos_by_domain)
         domain_layout.addWidget(self.domain_table)
 
         self.results_tabs.addTab(domain_container, "💎 Domínios & Instagrams Expirados")
@@ -496,15 +497,15 @@ class HunterTab(QWidget):
         row2.addWidget(lbl_lim)
 
         self.spin_max = QSpinBox()
-        self.spin_max.setRange(5, 10000)
+        self.spin_max.setRange(5, 100000)
         self.spin_max.setValue(50)
-        self.spin_max.setSingleStep(25)
+        self.spin_max.setSingleStep(50)
         self.spin_max.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.spin_max.setFixedWidth(85)
+        self.spin_max.setFixedWidth(100)
         row2.addWidget(self.spin_max)
 
         self.chk_unlimited = QCheckBox("♾️ Todos os Vídeos")
-        self.chk_unlimited.setToolTip("Busca todos os vídeos disponíveis do canal ou termo.")
+        self.chk_unlimited.setToolTip("Busca todos os vídeos disponíveis do canal ou termo (até 100.000).")
         self.chk_unlimited.toggled.connect(lambda checked: self.spin_max.setEnabled(not checked))
         row2.addWidget(self.chk_unlimited)
 
@@ -515,7 +516,7 @@ class HunterTab(QWidget):
 
         self.chk_include_related = QCheckBox("🔗 Relacionados")
         self.chk_include_related.setChecked(True)
-        self.chk_include_related.setToolTip("Aprofunda a busca capturando vídeos relacionados no mesmo nicho e idioma.")
+        self.chk_include_related.setToolTip("Aprende termos relacionados reais no YouTube (Suggest) e aplica filtro semântico estrito contra fuga de tema.")
         row2.addWidget(self.chk_include_related)
 
         self.chk_mode_24h = QCheckBox("🔄 24h")
@@ -682,7 +683,7 @@ class HunterTab(QWidget):
         selected_lang = self.combo_lang.currentData() if search_mode == "keywords" else "pt"
         date_filter = self.combo_date.currentData() if search_mode == "keywords" else "all_time"
         year_range = (self.spin_year_start.value(), self.spin_year_end.value()) if (search_mode == "keywords" and date_filter == "custom_range") else None
-        max_vids = 5000 if self.chk_unlimited.isChecked() else self.spin_max.value()
+        max_vids = 100000 if self.chk_unlimited.isChecked() else self.spin_max.value()
         sort_by = self.combo_sort.currentData()
         fast_mode = self.chk_fast_mode.isChecked()
         include_related = self.chk_include_related.isChecked() if search_mode == "keywords" else False
@@ -909,6 +910,13 @@ class HunterTab(QWidget):
         from PyQt6.QtCore import QUrl
         if url:
             QDesktopServices.openUrl(QUrl(url))
+
+    def _on_filter_videos_by_domain(self, domain_name: str):
+        """Switch to videos tab and filter all videos containing the specified domain."""
+        self.results_tabs.setCurrentIndex(0) # Tab 0: Videos
+        self.video_table.set_search_query(domain_name)
+        self.status_label.setText(f"Exibindo todos os vídeos com o link '{domain_name}'...")
+        self._append_log(f"🔍 Filtrando vídeos com o link '{domain_name}' na tabela principal.")
 
     def _on_domain_excluded(self, excluded_target: str):
         """Immediately remove excluded domain from tables, memory and session storage."""

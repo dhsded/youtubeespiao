@@ -103,7 +103,7 @@ class InstagramValidator:
 
             is_deleted = any(ind in page_text for ind in not_found_indicators)
 
-            if is_deleted:
+            if is_deleted or resp.status_code == 404:
                 result = {
                     "username": username,
                     "profile_url": profile_url,
@@ -112,7 +112,7 @@ class InstagramValidator:
                     "status": "Disponível",
                     "badge_icon": "🟢",
                     "status_color": "#10B981",
-                    "details": "Conta de Instagram Inexistente / Disponível para Reivindicar!",
+                    "details": "Conta de Instagram Deletada / Disponível para Criar!",
                     "type": "instagram"
                 }
             else:
@@ -135,12 +135,16 @@ class InstagramValidator:
                 "profile_url": profile_url,
                 "claim_url": claim_url,
                 "is_available": False,
-                "status": "Verificar",
-                "badge_icon": "⚪",
-                "status_color": "#94A3B8",
-                "details": "Não foi possível verificar status do Instagram",
+                "status": "Inativo",
+                "badge_icon": "🟡",
+                "status_color": "#F59E0B",
+                "details": f"Instabilidade ao verificar conta IG: {e}",
                 "type": "instagram"
             }
+
+        # Trademark risk
+        from core.trademark_validator import analyze_trademark_risk
+        result["trademark_risk"] = analyze_trademark_risk(username)
 
         self._cache[username] = result
         return result
