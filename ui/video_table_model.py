@@ -171,10 +171,14 @@ class VideoTableView(QWidget):
         self.table.setColumnCount(len(self.COLUMN_HEADERS))
         self.table.setHorizontalHeaderLabels(self.COLUMN_HEADERS)
         
+        self.sort_column = 3
+        self.sort_order_desc = True
+
         header = self.table.horizontalHeader()
         header.setSectionsMovable(True)
         header.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         header.customContextMenuRequested.connect(self._on_header_context_menu)
+        header.sectionClicked.connect(self._on_header_section_clicked)
 
         for i in range(len(self.COLUMN_HEADERS)):
             header.setSectionResizeMode(i, QHeaderView.ResizeMode.Interactive)
@@ -204,7 +208,7 @@ class VideoTableView(QWidget):
 
         self.table.setAlternatingRowColors(True)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.table.setSortingEnabled(True)
+        self.table.setSortingEnabled(False)
 
         layout.addWidget(self.table)
 
@@ -242,6 +246,44 @@ class VideoTableView(QWidget):
         p_layout.addWidget(self.combo_page_size)
 
         layout.addWidget(self.pagination_frame)
+
+    def _on_header_section_clicked(self, logical_index: int):
+        """Perform reliable data-level sorting when column header is clicked."""
+        if self.sort_column == logical_index:
+            self.sort_order_desc = not self.sort_order_desc
+        else:
+            self.sort_column = logical_index
+            self.sort_order_desc = True
+
+        def sort_key(v):
+            m = v.get("metrics", {})
+            if logical_index == 1:
+                return (v.get("title") or "").lower()
+            elif logical_index == 2:
+                return (v.get("channel_name") or "").lower()
+            elif logical_index == 3:
+                return m.get("view_count", 0)
+            elif logical_index == 4:
+                return m.get("views_90d", m.get("view_count", 0))
+            elif logical_index == 5:
+                return m.get("hourly_views", 0)
+            elif logical_index == 6:
+                return m.get("daily_views", 0)
+            elif logical_index == 7:
+                return m.get("monthly_views", 0)
+            elif logical_index == 8:
+                return m.get("yearly_views", 0)
+            elif logical_index == 9:
+                return m.get("publish_date", "")
+            elif logical_index == 10:
+                doms = v.get("domains", [])
+                avail_cnt = sum(1 for d in doms if d.get("status") == "Disponível")
+                return avail_cnt * 100000 + len(doms)
+            return m.get("view_count", 0)
+
+        self.filtered_videos_data.sort(key=sort_key, reverse=self.sort_order_desc)
+        self.current_page = 1
+        self._render_current_page()
 
     def _show_column_menu(self):
         menu = QMenu(self)
@@ -634,11 +676,11 @@ class DomainTableView(QWidget):
         "Tipo",
         "Domínio / Conta IG",
         "⚖️ Segurança de Marca",
-        "Vídeos Presente",
+        "Vídeos Onde Aparece",
         "Soma Tráfego Diário",
         "Soma Views 90 Dias",
         "Soma Views Totais",
-        "Vídeo Principal",
+        "Vídeo Onde Foi Encontrado",
         "Data de Envio",
         "⚡ VPH Soma (Views/Hora)",
         "Views / Mês (Soma)",
@@ -656,6 +698,8 @@ class DomainTableView(QWidget):
         self.page_size = 25
         self.status_filter = 0
         self.search_filter_text = ""
+        self.sort_column = None
+        self.sort_order_desc = False
 
         self._init_ui()
 
@@ -709,6 +753,7 @@ class DomainTableView(QWidget):
         header.setSectionsMovable(True)
         header.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         header.customContextMenuRequested.connect(self._on_header_context_menu)
+        header.sectionClicked.connect(self._on_header_section_clicked)
 
         for i in range(len(self.COLUMN_HEADERS)):
             header.setSectionResizeMode(i, QHeaderView.ResizeMode.Interactive)
@@ -723,11 +768,11 @@ class DomainTableView(QWidget):
         self.table.setColumnWidth(1, 105)  # Tipo
         self.table.setColumnWidth(2, 220)  # Domínio / IG
         self.table.setColumnWidth(3, 155)  # ⚖️ Segurança de Marca
-        self.table.setColumnWidth(4, 130)  # Vídeos Presente
+        self.table.setColumnWidth(4, 130)  # Vídeos Onde Aparece
         self.table.setColumnWidth(5, 145)  # Soma Tráfego Diário
         self.table.setColumnWidth(6, 140)  # Soma Views 90 Dias
         self.table.setColumnWidth(7, 135)  # Soma Views Totais
-        self.table.setColumnWidth(8, 260)  # Vídeo Principal
+        self.table.setColumnWidth(8, 270)  # Vídeo Onde Foi Encontrado
         self.table.setColumnWidth(9, 110)  # Data de Envio
         self.table.setColumnWidth(10, 110) # Views/Hora
         self.table.setColumnWidth(11, 110) # Views/Mês (Optional)
@@ -741,7 +786,7 @@ class DomainTableView(QWidget):
 
         self.table.setAlternatingRowColors(True)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.table.setSortingEnabled(True)
+        self.table.setSortingEnabled(False)
 
         layout.addWidget(self.table)
 
@@ -788,6 +833,66 @@ class DomainTableView(QWidget):
             action = QAction(name, menu)
             action.setCheckable(True)
             action.setChecked(not self.table.isColumnHidden(i))
+    def _on_header_section_clicked(self, logical_index: int):
+        """Perform reliable data-level sorting when column header is clicked."""
+        if self.sort_column == logical_index:
+            self.sort_order_desc = not self.sort_order_desc
+        else:
+            self.sort_column = logical_index
+            self.sort_order_desc = True
+
+        def sort_key(d):
+            if logical_index == 0:
+                status = d.get("status", "")
+                return 0 if status == "Disponível" else (1 if status == "Inativo" else 2)
+            elif logical_index == 1:
+                return 1 if d.get("is_instagram") else 0
+            elif logical_index == 2:
+                return (d.get("display_name") or d.get("root_domain") or "").lower()
+            elif logical_index == 3:
+                tm = d.get("trademark_risk") or {}
+                return tm.get("score", 0)
+            elif logical_index == 4:
+                return d.get("video_count", 1)
+            elif logical_index == 5:
+                return d.get("total_daily_views", 0)
+            elif logical_index == 6:
+                return d.get("total_views_90d", 0)
+            elif logical_index == 7:
+                return d.get("total_view_count", 0)
+            elif logical_index == 8:
+                return (d.get("video_title") or "").lower()
+            elif logical_index == 9:
+                return (d.get("video_metrics", {}).get("publish_date") or "")
+            elif logical_index == 10:
+                return d.get("total_hourly_views", 0)
+            elif logical_index == 11:
+                return d.get("total_monthly_views", 0)
+            elif logical_index == 12:
+                return d.get("total_yearly_views", 0)
+            elif logical_index == 13:
+                return (d.get("details") or "").lower()
+            return 0
+
+        self.filtered_domains_data.sort(key=sort_key, reverse=self.sort_order_desc)
+        self.current_page = 1
+        self._render_current_page()
+
+    def _get_domain_for_row(self, row: int) -> Optional[Dict[str, Any]]:
+        """Safely fetch domain record accurately corresponding to the visual table row."""
+        start_idx = (self.current_page - 1) * self.page_size
+        idx = start_idx + row
+        if 0 <= idx < len(self.filtered_domains_data):
+            return self.filtered_domains_data[idx]
+        return None
+
+    def _show_column_menu(self):
+        menu = QMenu(self)
+        menu.setStyleSheet("QMenu { padding: 6px; font-weight: 600; }")
+        for i, name in enumerate(self.COLUMN_HEADERS):
+            action = QAction(name, menu)
+            action.setCheckable(True)
+            action.setChecked(not self.table.isColumnHidden(i))
             action.toggled.connect(lambda checked, col=i: self.table.setColumnHidden(col, not checked))
             menu.addAction(action)
         menu.exec(self.btn_columns.mapToGlobal(QPoint(0, self.btn_columns.height())))
@@ -808,7 +913,7 @@ class DomainTableView(QWidget):
         grouped_dict: Dict[str, Dict[str, Any]] = {}
 
         for d in domains:
-            key = d.get("root_domain", "").strip().lower()
+            key = (d.get("root_domain") or d.get("display_name") or "").strip().lower()
             if not key:
                 continue
 
@@ -822,13 +927,14 @@ class DomainTableView(QWidget):
 
             video_entry = {
                 "video_id": d.get("video_id"),
-                "video_title": d.get("video_title", ""),
+                "video_title": d.get("video_title", "Vídeo"),
                 "video_url": d.get("video_url", ""),
                 "channel_name": d.get("channel_name", ""),
-                "publish_date": v_metrics.get("publish_date", ""),
+                "publish_date": v_metrics.get("publish_date", "Recente"),
                 "daily_views": d_views,
                 "view_count": t_views,
                 "views_90d": v_90d,
+                "hourly_views": h_views,
                 "source_location": d.get("source_location", "")
             }
 
@@ -850,7 +956,9 @@ class DomainTableView(QWidget):
             else:
                 existing = grouped_dict[key]
                 v_id = d.get("video_id")
-                if not any(v.get("video_id") == v_id for v in existing["associated_videos"]):
+                v_url = d.get("video_url")
+                # Deduplicate by video_id or video_url
+                if not any((v_id and v.get("video_id") == v_id) or (v_url and v.get("video_url") == v_url) for v in existing["associated_videos"]):
                     existing["video_count"] += 1
                     existing["associated_videos"].append(video_entry)
                     existing["total_daily_views"] += d_views
@@ -859,7 +967,7 @@ class DomainTableView(QWidget):
                     existing["total_hourly_views"] += h_views
                     existing["total_monthly_views"] += m_views
                     existing["total_yearly_views"] += y_views
-                    if d.get("source_location") not in existing["source_locations"]:
+                    if d.get("source_location") and d.get("source_location") not in existing["source_locations"]:
                         existing["source_locations"].append(d.get("source_location", ""))
 
         aggregated_list = list(grouped_dict.values())
@@ -926,6 +1034,7 @@ class DomainTableView(QWidget):
                 if self.search_filter_text in d.get("root_domain", "").lower()
                 or self.search_filter_text in d.get("video_title", "").lower()
                 or self.search_filter_text in d.get("display_name", "").lower()
+                or any(self.search_filter_text in v.get("video_title", "").lower() for v in d.get("associated_videos", []))
             ]
 
         self.filtered_domains_data = filtered
@@ -956,6 +1065,7 @@ class DomainTableView(QWidget):
             is_ig = d.get("is_instagram", False)
             v_cnt = d.get("video_count", 1)
             assoc_vids = d.get("associated_videos", [])
+            display_name = d.get("display_name") or d.get("root_domain", "")
 
             # 0. Status Badge
             badge_icon = d.get("badge_icon", "⚪")
@@ -968,6 +1078,7 @@ class DomainTableView(QWidget):
                 status_item.setForeground(QColor("#D97706"))
             else:
                 status_item.setForeground(QColor("#DC2626"))
+            status_item.setData(Qt.ItemDataRole.UserRole, d)
             self.table.setItem(row, 0, status_item)
 
             # 1. Type
@@ -978,19 +1089,19 @@ class DomainTableView(QWidget):
                 type_item.setForeground(QColor("#EC4899"))
             else:
                 type_item.setForeground(QColor("#0284C7"))
+            type_item.setData(Qt.ItemDataRole.UserRole, d)
             self.table.setItem(row, 1, type_item)
 
             # 2. Target Name / Root Domain
-            display_name = d.get("display_name") or d.get("root_domain", "")
             domain_item = QTableWidgetItem(display_name)
             domain_item.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
             if status == "Disponível":
                 domain_item.setForeground(QColor("#16A34A"))
+            domain_item.setData(Qt.ItemDataRole.UserRole, d)
             self.table.setItem(row, 2, domain_item)
 
-            # 3. Trademark & Brand Safety Badge (NEW!)
+            # 3. Trademark & Brand Safety Badge
             tm = d.get("trademark_risk") or analyze_trademark_risk(display_name)
-            is_safe = tm.get("is_safe", True)
             tm_color = tm.get("color", "#16A34A")
             tm_badge = tm.get("badge_short", "🟢 Seguro")
             
@@ -1004,6 +1115,7 @@ class DomainTableView(QWidget):
                 f"Marcas Notórias Relacionadas: {tm.get('matched_names')}\n"
                 f"Clique com o botão direito para consultar no INPI ou WIPO."
             )
+            tm_item.setData(Qt.ItemDataRole.UserRole, d)
             self.table.setItem(row, 3, tm_item)
 
             # 4. Video Count (Vídeos Onde Aparece) - Clean Centered Interactive Button
@@ -1018,7 +1130,6 @@ class DomainTableView(QWidget):
             btn_expand.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
             btn_expand.clicked.connect(lambda _, n=display_name, vids=assoc_vids: self._open_associated_videos_dialog(n, vids))
             v_cnt_layout.addWidget(btn_expand)
-
             self.table.setCellWidget(row, 4, v_cnt_widget)
 
             # 5. Cumulative Daily Traffic Sum (Soma Tráfego Diário)
@@ -1027,7 +1138,8 @@ class DomainTableView(QWidget):
             daily_item = NumericTableWidgetItem(daily_formatted, tot_daily)
             daily_item.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
             daily_item.setForeground(QColor("#16A34A"))
-            daily_item.setToolTip(f"Soma total do tráfego diário gerado por todos os {v_cnt} vídeos que contêm este domínio.")
+            daily_item.setToolTip(f"Soma total do tráfego diário gerado por todos os {v_cnt} vídeos que contêm este link.")
+            daily_item.setData(Qt.ItemDataRole.UserRole, d)
             self.table.setItem(row, 5, daily_item)
 
             # 6. Cumulative 90-Day Views Sum (Soma Views 90 Dias)
@@ -1037,6 +1149,7 @@ class DomainTableView(QWidget):
             views_90d_item.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
             views_90d_item.setForeground(QColor("#8B5CF6"))
             views_90d_item.setToolTip(f"Soma das visualizações recentes estimadas nos últimos 90 dias de todos os vídeos associados.")
+            views_90d_item.setData(Qt.ItemDataRole.UserRole, d)
             self.table.setItem(row, 6, views_90d_item)
 
             # 7. Cumulative Total Views (Soma Views Totais)
@@ -1046,12 +1159,25 @@ class DomainTableView(QWidget):
             tot_views_item.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
             tot_views_item.setForeground(QColor("#0284C7"))
             tot_views_item.setToolTip(f"Soma de todas as visualizações acumuladas dos {v_cnt} vídeos associados.")
+            tot_views_item.setData(Qt.ItemDataRole.UserRole, d)
             self.table.setItem(row, 7, tot_views_item)
 
-            # 8. Associated / Primary Video Title
+            # 8. Associated / Primary Video Title (Detailed for Multi-Video Occurrences)
             v_title = d.get("video_title", "")
-            title_item = QTableWidgetItem(v_title)
-            title_item.setToolTip(f"{v_title}\nCanal: {d.get('channel_name', '')}\nLink: {d.get('video_url', '')}")
+            if v_cnt > 1:
+                display_v_title = f"🎬 {v_cnt} Vídeos: {v_title[:36]}... (+{v_cnt - 1} outros)"
+                full_v_tooltip = (
+                    f"Encontrado em {v_cnt} vídeos no YouTube:\n\n" +
+                    "\n".join([f"• {v.get('video_title', 'Vídeo')} ({v.get('channel_name', '')})" for v in assoc_vids]) +
+                    f"\n\nClique no botão '🎯 Ver ({v_cnt})' ou duplo-clique na linha para ver todos os vídeos detalhados."
+                )
+            else:
+                display_v_title = v_title
+                full_v_tooltip = f"Título: {v_title}\nCanal: {d.get('channel_name', '')}\nLink: {d.get('video_url', '')}"
+
+            title_item = QTableWidgetItem(display_v_title)
+            title_item.setToolTip(full_v_tooltip)
+            title_item.setData(Qt.ItemDataRole.UserRole, d)
             self.table.setItem(row, 8, title_item)
 
             # 9. Upload Date (Data de Envio)
@@ -1059,6 +1185,7 @@ class DomainTableView(QWidget):
             date_item = QTableWidgetItem(pub_date)
             date_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             date_item.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
+            date_item.setData(Qt.ItemDataRole.UserRole, d)
             self.table.setItem(row, 9, date_item)
 
             # 10. Cumulative Views per Hour (⚡ VPH Soma)
@@ -1067,16 +1194,19 @@ class DomainTableView(QWidget):
             hourly_item.setForeground(QColor("#D97706"))
             hourly_item.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
             hourly_item.setToolTip(f"Soma da velocidade horária recente de todos os {v_cnt} vídeos associados: {tot_hourly:.2f} views/hora.")
+            hourly_item.setData(Qt.ItemDataRole.UserRole, d)
             self.table.setItem(row, 10, hourly_item)
 
             # 11. Cumulative Views per Month
             tot_monthly = d.get("total_monthly_views", 0)
             monthly_item = NumericTableWidgetItem(f"{format_number(round(tot_monthly, 1))}/mês", tot_monthly)
+            monthly_item.setData(Qt.ItemDataRole.UserRole, d)
             self.table.setItem(row, 11, monthly_item)
 
             # 12. Cumulative Views per Year
             tot_yearly = d.get("total_yearly_views", 0)
             yearly_item = NumericTableWidgetItem(f"{format_number(round(tot_yearly, 1))}/ano", tot_yearly)
+            yearly_item.setData(Qt.ItemDataRole.UserRole, d)
             self.table.setItem(row, 12, yearly_item)
 
             # 13. Details / WHOIS with Source Location Badge
@@ -1086,6 +1216,7 @@ class DomainTableView(QWidget):
             display_details = f"[{src_label}] {raw_details}" if src_label else raw_details
             details_item = QTableWidgetItem(display_details)
             details_item.setToolTip(f"Origem(ns): {src_label}\n{raw_details}")
+            details_item.setData(Qt.ItemDataRole.UserRole, d)
             self.table.setItem(row, 13, details_item)
 
             # 14. Action Buttons Widget (Spacious & Clean Layout)
@@ -1123,7 +1254,7 @@ class DomainTableView(QWidget):
                 btn_buy.clicked.connect(lambda _, l=buy_link: self.buy_domain_requested.emit(l))
                 action_layout.addWidget(btn_buy)
             elif is_ig and status == "Disponível":
-                ig_url = f"https://www.instagram.com/{display_name.replace('@', '')}"
+                ig_url = f"https://www.instagram.com/{display_name.replace('@', '').replace('📸 ', '')}"
                 btn_buy = QPushButton("📸 Reivindicar ↗")
                 btn_buy.setObjectName("btn_table_buy")
                 btn_buy.setToolTip("Abrir perfil no Instagram no seu navegador padrão (Chrome/Edge)")
@@ -1157,14 +1288,10 @@ class DomainTableView(QWidget):
 
             self.table.setCellWidget(row, 14, action_widget)
 
-        self.table.setSortingEnabled(True)
-
     def _on_cell_double_clicked(self, row: int, col: int):
         """Double clicking any domain row opens its associated videos modal."""
-        start_idx = (self.current_page - 1) * self.page_size
-        idx = start_idx + row
-        if 0 <= idx < len(self.filtered_domains_data):
-            d = self.filtered_domains_data[idx]
+        d = self._get_domain_for_row(row)
+        if d:
             name = d.get("display_name") or d.get("root_domain", "")
             vids = d.get("associated_videos", [])
             self._open_associated_videos_dialog(name, vids)
@@ -1181,11 +1308,10 @@ class DomainTableView(QWidget):
         
         is_safe = tm.get("is_safe", True)
         title = f"⚖️ Análise de Segurança de Marca: {domain_name}"
-        icon = QMessageBox.Icon.Information if is_safe else QMessageBox.Icon.Warning
         
         msg = QMessageBox(self)
         msg.setWindowTitle(title)
-        msg.setIcon(icon)
+        msg.setIcon(QMessageBox.Icon.Information if is_safe else QMessageBox.Icon.Warning)
         msg.setText(f"<b>Domínio / Conta:</b> <span style='color: #38BDF8;'>{domain_name}</span><br><br>"
                     f"<b>Status de Risco:</b> {tm.get('badge')}<br><br>"
                     f"<b>Parecer Jurídico:</b><br>{tm.get('legal_advice')}<br><br>"
@@ -1206,15 +1332,13 @@ class DomainTableView(QWidget):
         if not item:
             return
         row = item.row()
-        start_idx = (self.current_page - 1) * self.page_size
-        idx = start_idx + row
-        if idx < 0 or idx >= len(self.filtered_domains_data):
+        d = self._get_domain_for_row(row)
+        if not d:
             return
 
         from PyQt6.QtGui import QDesktopServices
         from PyQt6.QtCore import QUrl
 
-        d = self.filtered_domains_data[idx]
         display_name = d.get("display_name") or d.get("root_domain", "")
         root_domain = d.get("root_domain", "")
         buy_link = d.get("buy_link", "")
@@ -1286,4 +1410,6 @@ class DomainTableView(QWidget):
         if reply == QMessageBox.StandardButton.Yes:
             from core.domain_extractor import add_to_exclusion_list
             add_to_exclusion_list(clean_target)
+            if root_domain and root_domain != clean_target:
+                add_to_exclusion_list(root_domain)
             self.domain_excluded_requested.emit(clean_target)

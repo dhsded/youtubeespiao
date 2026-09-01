@@ -926,13 +926,23 @@ class HunterTab(QWidget):
     def _update_stat_cards(self):
         total_vids = len(self.all_videos)
         total_views = sum(v.get("metrics", {}).get("view_count", 0) for v in self.all_videos)
-        total_doms = len(self.all_domains)
-        avail_doms = sum(1 for d in self.all_domains if d.get("status") == "Disponível")
+        
+        # Group domains to get exact unique opportunities counts
+        unique_doms_set = set()
+        unique_avail_set = set()
+        for d in self.all_domains:
+            key = (d.get("root_domain") or d.get("display_name") or "").strip().lower()
+            if key:
+                unique_doms_set.add(key)
+                st = d.get("status", "")
+                # Strictly Available/Expired (excludes Inativo, Ativo, and Verificar)
+                if st == "Disponível" and st != "Inativo" and st != "Ativo" and st != "Verificar":
+                    unique_avail_set.add(key)
 
         self.val_videos.setText(str(total_vids))
         self.val_views.setText(format_number(total_views))
-        self.val_domains.setText(str(total_doms))
-        self.val_avail.setText(str(avail_doms))
+        self.val_domains.setText(str(len(unique_doms_set)))
+        self.val_avail.setText(str(len(unique_avail_set)))
 
     def _append_log(self, text: str):
         self.log_view.appendPlainText(text)
