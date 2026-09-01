@@ -44,8 +44,21 @@ instance_num = InstanceManager.claim_instance_number()
 # Set isolated Chromium user data directory before QtWebEngine initializes
 profile_dir = os.path.join(tempfile.gettempdir(), f"yt_espiao_profile_{instance_num}_{os.getpid()}")
 os.makedirs(profile_dir, exist_ok=True)
-sys.argv.append(f"--user-data-dir={profile_dir}")
-sys.argv.append(f"--disk-cache-dir={profile_dir}")
+
+# Optimized Chromium arguments for low-resource background multi-instance execution
+sys.argv.extend([
+    f"--user-data-dir={profile_dir}",
+    f"--disk-cache-dir={profile_dir}",
+    "--disable-background-timer-throttling=false",
+    "--disable-renderer-backgrounding=false",
+    "--disable-features=TranslateUI,AutofillServerCommunication",
+    "--disable-hang-monitor",
+    "--disable-sync",
+    "--disable-default-apps",
+    "--renderer-process-limit=2",
+    "--js-flags=--max-old-space-size=128",
+    "--mute-audio"
+])
 os.environ["QTWEBENGINE_STORAGE_PATH"] = profile_dir
 
 from PyQt6.QtWidgets import QApplication

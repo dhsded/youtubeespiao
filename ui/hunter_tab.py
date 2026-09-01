@@ -235,12 +235,25 @@ class HunterTab(QWidget):
         # Telemetry State
         self.start_time: float = 0.0
         self.target_video_count: int = 50
+        self.is_background_mode: bool = False
         self.telemetry_timer = QTimer(self)
         self.telemetry_timer.setInterval(500)
         self.telemetry_timer.timeout.connect(self._update_telemetry)
 
         self._init_ui()
         self._restore_previous_session_if_any()
+
+    def set_background_mode(self, is_bg: bool):
+        """Throttle UI updates and timers to minimize background CPU/RAM consumption."""
+        self.is_background_mode = is_bg
+        if is_bg:
+            self.telemetry_timer.setInterval(4000)
+        else:
+            self.telemetry_timer.setInterval(500)
+            self.all_videos.sort(key=lambda x: x.get("metrics", {}).get("view_count", 0), reverse=True)
+            self.video_table.set_videos(self.all_videos)
+            self.domain_table.set_domains(self.all_domains)
+            self._update_stat_cards()
 
     def _init_ui(self):
         main_layout = QVBoxLayout(self)
@@ -711,23 +724,25 @@ class HunterTab(QWidget):
         self.crawler_thread.active_keyword_changed.connect(self._on_active_keyword_changed)
         self.crawler_thread.finished_crawl.connect(self._on_finished_crawl)
         self.crawler_thread.error_occurred.connect(self._on_error_occurred)
-        self.crawler_thread.start()
+        self.crawler_thread.start(QThread.Priority.LowPriority)
 
     def _on_active_keyword_changed(self, target: str, category: str, current_idx: int, total_count: int):
         """Update the prominent active keyword HUD display in real-time."""
         self.lbl_active_keyword.setText(f"🎯 \"{target}\"  •  {category}")
         self.lbl_active_progress_pill.setText(f"Alvo {current_idx} de {total_count}")
-        self.active_target_card.setStyleSheet("""
-            QFrame#active_target_card {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #0F172A, stop:0.5 #1E293B, stop:1 #0F172A);
-                border: 2px solid #38BDF8;
-                border-radius: 8px;
-                padding: 6px 12px;
-            }
-        """)
+        if not self.is_background_mode:
+            self.active_target_card.setStyleSheet("""
+                QFrame#active_target_card {
+                    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #0F172A, stop:0.5 #1E293B, stop:1 #0F172A);
+                    border: 2px solid #38BDF8;
+                    border-radius: 8px;
+                    padding: 6px 12px;
+                }
+            """)
 
     def _on_live_video_analyzed(self, url: str, title: str):
-        self.live_video_stream.emit(url, title)
+        if not self.is_background_mode:
+            self.live_video_stream.emit(url, title)
 
     def _on_toggle_pause(self):
         if not self.crawler_thread or not self.crawler_thread.isRunning():
@@ -767,11 +782,12 @@ class HunterTab(QWidget):
         if any(v.get("id") == v_id for v in self.all_videos):
             return
         self.all_videos.append(video_dict)
-        self.all_videos.sort(key=lambda x: x["metrics"]["view_count"], reverse=True)
-        self.video_table.set_videos(self.all_videos)
-        self._update_stat_cards()
+        if not self.is_background_mode:
+            self.all_videos.sort(key=lambda x: x.get("metrics", {}).get("view_count", 0), reverse=True)
+            self.video_table.set_videos(self.all_videos)
+            self._update_stat_cards()
+            self.live_video_stream.emit(video_dict.get("url", ""), video_dict.get("title", ""), video_dict)
         self._append_log(f"📹 Vídeo minerado: {video_dict['title'][:45]}... ({video_dict['metrics']['view_count_formatted']} views)")
-        self.live_video_stream.emit(video_dict.get("url", ""), video_dict.get("title", ""), video_dict)
         if len(self.all_videos) % 5 == 0:
             self._trigger_autosave()
 
@@ -781,8 +797,9 @@ class HunterTab(QWidget):
         if any(d.get("root_domain") == d_root and d.get("video_id") == v_id for d in self.all_domains):
             return
         self.all_domains.append(domain_dict)
-        self.domain_table.set_domains(self.all_domains)
-        self._update_stat_cards()
+        if not self.is_background_mode:
+            self.domain_table.set_domains(self.all_domains)
+            self._update_stat_cards()
         badge = domain_dict.get("badge_icon", "")
         status = domain_dict.get("status", "")
         name = domain_dict.get("display_name") or domain_dict.get("root_domain", "")

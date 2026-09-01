@@ -208,14 +208,31 @@ class MainWindow(QMainWindow):
             self._restore_from_tray()
 
     def _restore_from_tray(self):
+        if hasattr(self, "hunter_tab"):
+            self.hunter_tab.set_background_mode(False)
         self.showNormal()
         self.activateWindow()
         self.raise_()
+
+    def _optimize_memory_for_background(self):
+        """Release unused RAM pages and throttle timers to achieve ultra-low background CPU and memory footprint."""
+        import gc
+        gc.collect()
+        import sys
+        if sys.platform == "win32":
+            try:
+                import ctypes
+                ctypes.windll.psapi.EmptyWorkingSet(ctypes.windll.kernel32.GetCurrentProcess())
+            except Exception:
+                pass
+        if hasattr(self, "hunter_tab"):
+            self.hunter_tab.set_background_mode(True)
 
     def changeEvent(self, event):
         if event.type() == QEvent.Type.WindowStateChange:
             if self.isMinimized():
                 self.hide()
+                self._optimize_memory_for_background()
         super().changeEvent(event)
 
     def closeEvent(self, event):
@@ -223,6 +240,7 @@ class MainWindow(QMainWindow):
         if self.hunter_tab.crawler_thread and self.hunter_tab.crawler_thread.isRunning():
             event.ignore()
             self.hide()
+            self._optimize_memory_for_background()
         else:
             InstanceManager.release_instance()
             event.accept()
