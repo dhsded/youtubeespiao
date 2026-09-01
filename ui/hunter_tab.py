@@ -565,17 +565,26 @@ class HunterTab(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(10)
 
-        self.btn_export_pdf = QPushButton("📑 Exportar PDF")
+        self.btn_export_pdf = QPushButton("📑 Exportar PDF (Disponíveis)")
         self.btn_export_pdf.setObjectName("btn_success")
         self.btn_export_pdf.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.btn_export_pdf.setToolTip("Exportar relatório executivo em PDF somente com os domínios e perfis disponíveis")
         self.btn_export_pdf.clicked.connect(self._export_pdf)
         layout.addWidget(self.btn_export_pdf)
 
         self.btn_export_excel = QPushButton("📊 Exportar Excel (.xlsx)")
         self.btn_export_excel.setObjectName("btn_success")
         self.btn_export_excel.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.btn_export_excel.setToolTip("Exportar planilha Excel com as oportunidades disponíveis")
         self.btn_export_excel.clicked.connect(self._export_excel)
         layout.addWidget(self.btn_export_excel)
+
+        self.btn_export_txt = QPushButton("📝 Exportar TXT")
+        self.btn_export_txt.setObjectName("btn_success")
+        self.btn_export_txt.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.btn_export_txt.setToolTip("Exportar lista formatada em texto simples (.txt) dos domínios disponíveis")
+        self.btn_export_txt.clicked.connect(self._export_txt)
+        layout.addWidget(self.btn_export_txt)
 
         self.btn_export_csv = QPushButton("📄 Exportar CSV")
         self.btn_export_csv.setObjectName("btn_success")
@@ -842,49 +851,66 @@ class HunterTab(QWidget):
         self.status_label.setText("Resultados limpos e sessão anterior resetada.")
 
     def _export_pdf(self):
-        if not self.all_videos and not self.all_domains:
-            QMessageBox.warning(self, "Exportar", "Não há dados minerados para exportar.")
+        avail_cnt = sum(1 for d in self.all_domains if d.get("status") == "Disponível")
+        if avail_cnt == 0:
+            QMessageBox.warning(self, "Exportar PDF", "Nenhum domínio expirado / disponível foi encontrado para exportação.")
             return
-        path, _ = QFileDialog.getSaveFileName(self, "Salvar Relatório PDF", "Relatorio_YouTube_Espiao.pdf", "PDF Files (*.pdf)")
+        path, _ = QFileDialog.getSaveFileName(self, "Salvar Relatório PDF (Disponíveis)", "Relatorio_YouTube_Espiao_Disponiveis.pdf", "PDF Files (*.pdf)")
         if path:
             try:
                 DataExporter.export_to_pdf(path, self.all_domains, self.all_videos)
-                QMessageBox.information(self, "Sucesso", f"Relatório PDF salvo com sucesso em:\n{path}")
+                QMessageBox.information(self, "Sucesso", f"Relatório PDF com {avail_cnt} oportunidades disponíveis salvo em:\n{path}")
             except Exception as e:
                 QMessageBox.critical(self, "Erro na Exportação", str(e))
 
     def _export_excel(self):
-        if not self.all_videos and not self.all_domains:
-            QMessageBox.warning(self, "Exportar", "Não há dados minerados para exportar.")
+        avail_cnt = sum(1 for d in self.all_domains if d.get("status") == "Disponível")
+        if avail_cnt == 0:
+            QMessageBox.warning(self, "Exportar Excel", "Nenhum domínio expirado / disponível foi encontrado para exportação.")
             return
-        path, _ = QFileDialog.getSaveFileName(self, "Salvar Relatório Excel", "Relatorio_YouTube_Espiao.xlsx", "Excel Files (*.xlsx)")
+        path, _ = QFileDialog.getSaveFileName(self, "Salvar Relatório Excel (Disponíveis)", "Relatorio_YouTube_Espiao_Disponiveis.xlsx", "Excel Files (*.xlsx)")
         if path:
             try:
                 DataExporter.export_to_excel(path, self.all_domains, self.all_videos)
-                QMessageBox.information(self, "Sucesso", f"Relatório salvo com sucesso em:\n{path}")
+                QMessageBox.information(self, "Sucesso", f"Planilha Excel com {avail_cnt} oportunidades disponíveis salva em:\n{path}")
+            except Exception as e:
+                QMessageBox.critical(self, "Erro na Exportação", str(e))
+
+    def _export_txt(self):
+        avail_cnt = sum(1 for d in self.all_domains if d.get("status") == "Disponível")
+        if avail_cnt == 0:
+            QMessageBox.warning(self, "Exportar TXT", "Nenhum domínio expirado / disponível foi encontrado para exportação.")
+            return
+        path, _ = QFileDialog.getSaveFileName(self, "Salvar Lista TXT (Disponíveis)", "Dominios_Disponiveis.txt", "Text Files (*.txt)")
+        if path:
+            try:
+                DataExporter.export_to_txt(path, self.all_domains, self.all_videos)
+                QMessageBox.information(self, "Sucesso", f"Lista TXT com {avail_cnt} oportunidades disponíveis salva em:\n{path}")
             except Exception as e:
                 QMessageBox.critical(self, "Erro na Exportação", str(e))
 
     def _export_csv(self):
-        if not self.all_domains:
-            QMessageBox.warning(self, "Exportar", "Não há registros encontrados para exportar.")
+        avail_cnt = sum(1 for d in self.all_domains if d.get("status") == "Disponível")
+        if avail_cnt == 0:
+            QMessageBox.warning(self, "Exportar CSV", "Nenhum domínio expirado / disponível foi encontrado para exportação.")
             return
-        path, _ = QFileDialog.getSaveFileName(self, "Salvar Oportunidades CSV", "Oportunidades_Expiradas.csv", "CSV Files (*.csv)")
+        path, _ = QFileDialog.getSaveFileName(self, "Salvar Oportunidades CSV (Disponíveis)", "Oportunidades_Disponiveis.csv", "CSV Files (*.csv)")
         if path:
             try:
                 DataExporter.export_to_csv(path, self.all_domains)
-                QMessageBox.information(self, "Sucesso", f"Arquivo CSV salvo com sucesso em:\n{path}")
+                QMessageBox.information(self, "Sucesso", f"Arquivo CSV com {avail_cnt} oportunidades disponíveis salvo em:\n{path}")
             except Exception as e:
                 QMessageBox.critical(self, "Erro na Exportação", str(e))
 
     def _export_json(self):
-        if not self.all_videos and not self.all_domains:
-            QMessageBox.warning(self, "Exportar", "Não há dados para exportar.")
+        avail_cnt = sum(1 for d in self.all_domains if d.get("status") == "Disponível")
+        if avail_cnt == 0:
+            QMessageBox.warning(self, "Exportar JSON", "Nenhum domínio expirado / disponível foi encontrado para exportação.")
             return
-        path, _ = QFileDialog.getSaveFileName(self, "Salvar Dados JSON", "Dados_Mineracao.json", "JSON Files (*.json)")
+        path, _ = QFileDialog.getSaveFileName(self, "Salvar Dados JSON (Disponíveis)", "Dados_Disponiveis.json", "JSON Files (*.json)")
         if path:
             try:
                 DataExporter.export_to_json(path, self.all_domains, self.all_videos)
-                QMessageBox.information(self, "Sucesso", f"Arquivo JSON salvo com sucesso em:\n{path}")
+                QMessageBox.information(self, "Sucesso", f"Arquivo JSON com {avail_cnt} oportunidades disponíveis salvo em:\n{path}")
             except Exception as e:
                 QMessageBox.critical(self, "Erro na Exportação", str(e))

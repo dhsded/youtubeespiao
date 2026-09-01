@@ -1,16 +1,18 @@
 """
 Data Exporter for YouTube Miner, Domain and Instagram Results.
-Exports comprehensive executive reports in PDF, Excel (.xlsx), CSV, and JSON.
+Exports EXCLUSIVELY AVAILABLE and ACTIONABLE opportunities in PDF, Excel (.xlsx), CSV, TXT, and JSON.
 Features:
+- Strict filtering: Exports ONLY expired domains and Instagram handles that are AVAILABLE ('Disponível') for purchase/claim.
 - High-fidelity Landscape PDF reports with interactive clickable links (YouTube URLs, Domain Registrar & Claim links).
+- Executive TXT reports with structured ASCII summary and direct links.
 - High-precision 90-Day Traffic Metrics ('Views nos Últimos 90 Dias') and calibrated VPH.
-- Complete data columns: Video Count, Cumulative Daily Traffic, 90-Day Views, Total Views, Upload Date, and WHOIS details.
 - Clean corporate typography and visual KPI badges.
 """
 
 import json
+import os
 from datetime import datetime
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 import pandas as pd
 from PyQt6.QtGui import QPdfWriter, QTextDocument, QPageSize, QPageLayout
 from PyQt6.QtCore import QMarginsF
@@ -18,11 +20,32 @@ from PyQt6.QtCore import QMarginsF
 from core.metrics_calculator import format_number
 
 class DataExporter:
-    @staticmethod
-    def export_domains_to_dataframe(domains_data: List[Dict[str, Any]]) -> pd.DataFrame:
-        """Format domain items into a pandas DataFrame."""
+    @classmethod
+    def get_available_domains(cls, domains_data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Filter list to retain ONLY available domains and Instagram accounts."""
+        return [d for d in domains_data if d.get("status") == "Disponível"]
+
+    @classmethod
+    def get_available_videos(cls, videos_data: List[Dict[str, Any]], available_domains: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Filter videos to retain only those containing available expired domains."""
+        avail_roots = {d.get("root_domain", "").strip().lower() for d in available_domains if d.get("root_domain")}
+        filtered_vids = []
+        for v in videos_data:
+            v_doms = v.get("domains", [])
+            has_avail = any(
+                d.get("status") == "Disponível" or d.get("root_domain", "").strip().lower() in avail_roots
+                for d in v_doms
+            )
+            if has_avail:
+                filtered_vids.append(v)
+        return filtered_vids if filtered_vids else videos_data
+
+    @classmethod
+    def export_domains_to_dataframe(cls, domains_data: List[Dict[str, Any]], only_available: bool = True) -> pd.DataFrame:
+        """Format available domain items into a pandas DataFrame."""
+        filtered_domains = cls.get_available_domains(domains_data) if only_available else domains_data
         rows = []
-        for item in domains_data:
+        for item in filtered_domains:
             v_metrics = item.get("video_metrics", {})
             v_cnt = item.get("video_count", 1)
             tot_daily = item.get("total_daily_views", v_metrics.get("daily_views", 0))
@@ -51,11 +74,13 @@ class DataExporter:
             })
         return pd.DataFrame(rows)
 
-    @staticmethod
-    def export_videos_to_dataframe(videos_data: List[Dict[str, Any]]) -> pd.DataFrame:
-        """Format video items into a pandas DataFrame."""
+    @classmethod
+    def export_videos_to_dataframe(cls, videos_data: List[Dict[str, Any]], domains_data: Optional[List[Dict[str, Any]]] = None) -> pd.DataFrame:
+        """Format video items into a pandas DataFrame (focusing on available opportunities)."""
+        avail_doms = cls.get_available_domains(domains_data) if domains_data else []
+        filtered_videos = cls.get_available_videos(videos_data, avail_doms) if avail_doms else videos_data
         rows = []
-        for v in videos_data:
+        for v in filtered_videos:
             metrics = v.get("metrics", {})
             rows.append({
                 "Título": v.get("title"),
@@ -76,26 +101,83 @@ class DataExporter:
 
     @classmethod
     def export_to_excel(cls, file_path: str, domains_data: List[Dict[str, Any]], videos_data: List[Dict[str, Any]]):
-        df_domains = cls.export_domains_to_dataframe(domains_data)
-        df_videos = cls.export_videos_to_dataframe(videos_data)
+        """Export ONLY available opportunities to Excel (.xlsx)."""
+        avail_doms = cls.get_available_domains(domains_data)
+        df_domains = cls.export_domains_to_dataframe(avail_doms, only_available=True)
+        df_videos = cls.export_videos_to_dataframe(videos_data, avail_doms)
 
         with pd.ExcelWriter(file_path, engine="openpyxl") as writer:
-            df_domains.to_excel(writer, sheet_name="Oportunidades Expiradas", index=False)
-            df_videos.to_excel(writer, sheet_name="Vídeos Minerados", index=False)
+            df_domains.to_excel(writer, sheet_name="Domínios Disponíveis", index=False)
+            df_videos.to_excel(writer, sheet_name="Vídeos de Origem", index=False)
 
     @classmethod
     def export_to_csv(cls, file_path: str, domains_data: List[Dict[str, Any]]):
-        df_domains = cls.export_domains_to_dataframe(domains_data)
+        """Export ONLY available opportunities to CSV."""
+        df_domains = cls.export_domains_to_dataframe(domains_data, only_available=True)
         df_domains.to_csv(file_path, index=False, encoding="utf-8-sig")
 
     @classmethod
+    def export_to_txt(cls, file_path: str, domains_data: List[Dict[str, Any]], videos_data: Optional[List[Dict[str, Any]]] = None):
+        """Export a clean, structured plain text report of available expired domains and Instagram handles."""
+        avail_doms = cls.get_available_domains(domains_data)
+        now_str = datetime.now().strftime("%d/%m/%Y às %H:%M:%S")
+        tot_traffic = sum(d.get("total_daily_views", d.get("video_metrics", {}).get("daily_views", 0)) for d in avail_doms)
+
+        lines = [
+            "================================================================================",
+            "🎯 YOUTUBE ESPIÃO & HUNTER BROWSER — RELATÓRIO DE OPORTUNIDADES DISPONÍVEIS",
+            f"Gerado em: {now_str}",
+            f"Total de Oportunidades DISPONÍVEIS para Registro / Claim: {len(avail_doms)}",
+            f"Soma Total de Tráfego Diário Estimado: {format_number(round(tot_traffic, 1))} views/dia",
+            "================================================================================",
+            ""
+        ]
+
+        if not avail_doms:
+            lines.append("Nenhum domínio expirado ou disponível foi encontrado nesta varredura.")
+        else:
+            for idx, d in enumerate(avail_doms, 1):
+                name = d.get("display_name") or d.get("root_domain", "")
+                is_ig = d.get("is_instagram", False)
+                type_str = "INSTAGRAM" if is_ig else "DOMÍNIO WEB"
+                v_cnt = d.get("video_count", 1)
+                daily = d.get("total_daily_views", d.get("video_metrics", {}).get("daily_views", 0))
+                tot_90d = d.get("total_views_90d", d.get("total_view_count", 0))
+                tot_views = d.get("total_view_count", d.get("video_metrics", {}).get("view_count", 0))
+                
+                v_title = d.get("video_title", "Vídeo Principal")
+                v_url = d.get("video_url", "")
+                channel = d.get("channel_name", "")
+                pub_date = d.get("video_metrics", {}).get("publish_date", "Recente")
+                buy_link = d.get("buy_link", "")
+                reg_name = d.get("registrar_name", "Registrador")
+
+                lines.extend([
+                    f"[{idx:02d}] 🟢 DISPONÍVEL • [{type_str}] {name}",
+                    f"    • Tráfego Diário: 🔥 {format_number(round(daily, 1))}/dia | Views 90d: ⚡ {format_number(tot_90d)} | Total: {format_number(tot_views)} views",
+                    f"    • Presente em: {v_cnt} vídeo(s)",
+                    f"    • Vídeo Principal: {v_title} ({v_url})",
+                    f"    • Canal: {channel} | Data de Postagem: {pub_date}",
+                    f"    • Local no Vídeo: {d.get('source_location', 'Descrição')}",
+                    f"    • Link Direto de Registro/Claim: {buy_link} ({reg_name})",
+                    "--------------------------------------------------------------------------------"
+                ])
+
+        with open(file_path, "w", encoding="utf-8") as f:
+            f.write("\n".join(lines))
+
+    @classmethod
     def export_to_json(cls, file_path: str, domains_data: List[Dict[str, Any]], videos_data: List[Dict[str, Any]]):
+        """Export ONLY available opportunities to JSON."""
+        avail_doms = cls.get_available_domains(domains_data)
+        avail_vids = cls.get_available_videos(videos_data, avail_doms)
+
         data = {
-            "total_domains": len(domains_data),
-            "total_videos": len(videos_data),
+            "total_available_domains": len(avail_doms),
+            "total_associated_videos": len(avail_vids),
             "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "domains": domains_data,
-            "videos": videos_data
+            "domains": avail_doms,
+            "videos": avail_vids
         }
         with open(file_path, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
@@ -104,13 +186,16 @@ class DataExporter:
     def export_to_pdf(cls, file_path: str, domains_data: List[Dict[str, Any]], videos_data: List[Dict[str, Any]]):
         """
         Generates a comprehensive executive PDF report in Landscape format with clickable hyperlinks,
-        90-day traffic metrics, domain purchase links, and video source links.
+        showing EXCLUSIVELY available expired domains and Instagram accounts.
         """
         now_str = datetime.now().strftime("%d/%m/%Y às %H:%M:%S")
-        total_videos = len(videos_data)
-        total_views = sum(v.get("metrics", {}).get("view_count", 0) for v in videos_data)
-        total_domains = len(domains_data)
-        avail_count = sum(1 for d in domains_data if d.get("status") == "Disponível")
+        avail_doms = cls.get_available_domains(domains_data)
+        avail_vids = cls.get_available_videos(videos_data, avail_doms)
+
+        total_videos = len(avail_vids)
+        total_views = sum(v.get("metrics", {}).get("view_count", 0) for v in avail_vids)
+        avail_count = len(avail_doms)
+        total_daily_traffic = sum(d.get("total_daily_views", d.get("video_metrics", {}).get("daily_views", 0)) for d in avail_doms)
 
         # HTML document structure
         html = f"""
@@ -128,7 +213,7 @@ class DataExporter:
                 .summary-val-green {{ font-size: 12pt; font-weight: 800; color: #16A34A; }}
                 .summary-lbl {{ font-size: 7.5pt; color: #475569; text-transform: uppercase; font-weight: 700; }}
                 
-                h2 {{ font-size: 10.5pt; color: #0F172A; border-bottom: 2px solid #2563EB; padding-bottom: 3px; margin-top: 10px; margin-bottom: 6px; }}
+                h2 {{ font-size: 10.5pt; color: #0F172A; border-bottom: 2px solid #16A34A; padding-bottom: 3px; margin-top: 10px; margin-bottom: 6px; }}
                 
                 table.data-table {{ width: 100%; border-collapse: collapse; font-size: 7.5pt; margin-bottom: 12px; }}
                 table.data-table th {{ background-color: #1E293B; color: #FFFFFF; font-weight: 700; padding: 5px 6px; text-align: left; border: 1px solid #334155; }}
@@ -136,8 +221,6 @@ class DataExporter:
                 table.data-table tr:nth-child(even) {{ background-color: #F8FAFC; }}
                 
                 .badge-available {{ color: #16A34A; font-weight: 800; }}
-                .badge-inactive {{ color: #D97706; font-weight: 700; }}
-                .badge-active {{ color: #DC2626; }}
                 
                 a {{ color: #0284C7; text-decoration: none; font-weight: 700; }}
                 a.buy-btn {{ color: #16A34A; font-weight: 800; text-decoration: underline; }}
@@ -146,31 +229,31 @@ class DataExporter:
             </style>
         </head>
         <body>
-            <div class="header-title">🎯 YouTube Espião & Hunter Browser — Relatório Executivo de Mineração</div>
-            <div class="header-sub">Gerado em {now_str} • Relatório de Oportunidades & Análise de Tráfego Recente (90 Dias & VPH)</div>
+            <div class="header-title">🎯 YouTube Espião — Relatório de Oportunidades Disponíveis</div>
+            <div class="header-sub">Gerado em {now_str} • Relatório Exclusivo de Domínios Expirados & Contas IG Disponíveis para Registro</div>
             
             <table class="summary-table">
                 <tr>
+                    <td class="summary-box" style="width: 25%; background-color: #DCFCE7; border-color: #16A34A;">
+                        <div class="summary-val-green">{avail_count}</div>
+                        <div class="summary-lbl" style="color: #15803D;">Oportunidades Disponíveis</div>
+                    </td>
+                    <td class="summary-box" style="width: 25%;">
+                        <div class="summary-val-green">🔥 {format_number(round(total_daily_traffic, 1))}/dia</div>
+                        <div class="summary-lbl">Soma Total Tráfego Diário</div>
+                    </td>
                     <td class="summary-box" style="width: 25%;">
                         <div class="summary-val">{total_videos}</div>
-                        <div class="summary-lbl">Vídeos Minerados</div>
+                        <div class="summary-lbl">Vídeos Associados</div>
                     </td>
                     <td class="summary-box" style="width: 25%;">
                         <div class="summary-val-blue">{format_number(total_views)}</div>
                         <div class="summary-lbl">Visualizações Totais</div>
                     </td>
-                    <td class="summary-box" style="width: 25%;">
-                        <div class="summary-val-purple">{total_domains}</div>
-                        <div class="summary-lbl">Oportunidades Analisadas</div>
-                    </td>
-                    <td class="summary-box" style="width: 25%; background-color: #DCFCE7; border-color: #16A34A;">
-                        <div class="summary-val-green">{avail_count}</div>
-                        <div class="summary-lbl" style="color: #15803D;">Disponíveis p/ Compra/Claim</div>
-                    </td>
                 </tr>
             </table>
 
-            <h2>💎 Oportunidades: Domínios e Contas de Instagram (Agregados por Tráfego)</h2>
+            <h2>💎 Oportunidades Disponíveis: Domínios Web & Contas de Instagram</h2>
             <table class="data-table">
                 <thead>
                     <tr>
@@ -189,16 +272,13 @@ class DataExporter:
                 <tbody>
         """
 
-        # Populate domains table with clickable links and formatted data
-        if not domains_data:
-            html += "<tr><td colspan='10' style='text-align:center; color:#64748B;'>Nenhuma oportunidade encontrada na varredura.</td></tr>"
+        # Populate available domains table with clickable links and formatted data
+        if not avail_doms:
+            html += "<tr><td colspan='10' style='text-align:center; color:#64748B;'>Nenhuma oportunidade disponível encontrada na varredura.</td></tr>"
         else:
-            for d in domains_data:
-                status = d.get("status", "Desconhecido")
+            for d in avail_doms:
                 is_ig = d.get("is_instagram", False)
                 type_label = "📸 Instagram" if is_ig else "🌐 Domínio"
-                badge_class = "badge-available" if status == "Disponível" else ("badge-inactive" if status == "Inativo" else "badge-active")
-                badge_icon = d.get("badge_icon", "⚪")
                 name = d.get("display_name") or d.get("root_domain", "")
                 
                 v_cnt = d.get("video_count", 1)
@@ -226,17 +306,17 @@ class DataExporter:
                 else:
                     video_link_html = f"<b>{v_title[:40]}</b><br><span class='small-gray'>Canal: {channel}</span>"
 
-                if buy_link and status == "Disponível":
+                if buy_link:
                     action_html = f"<a class='buy-btn' href='{buy_link}'>🛒 Comprar ({reg_name}) ↗</a>"
-                elif is_ig and status == "Disponível":
+                elif is_ig:
                     ig_claim_url = f"https://www.instagram.com/{name.replace('@', '')}"
                     action_html = f"<a class='buy-btn' href='{ig_claim_url}'>📸 Reivindicar IG ↗</a>"
                 else:
-                    action_html = f"<span class='small-gray'>{d.get('details', '')[:30]}</span>"
+                    action_html = "<span class='small-gray'>Disponível</span>"
 
                 html += f"""
                     <tr>
-                        <td class="{badge_class}">{badge_icon} {status}</td>
+                        <td class="badge-available">🟢 Disponível</td>
                         <td>{type_label}</td>
                         <td><b>{name}</b><br><span class='small-gray'>{d.get('source_location', '')}</span></td>
                         <td><b>{v_cnt_str}</b></td>
@@ -253,7 +333,7 @@ class DataExporter:
                 </tbody>
             </table>
 
-            <h2>🏆 Vídeos Minerados & Desempenho de Tráfego Recente (Links Clicáveis)</h2>
+            <h2>🏆 Vídeos de Origem das Oportunidades Disponíveis (Links Clicáveis)</h2>
             <table class="data-table">
                 <thead>
                     <tr>
@@ -264,21 +344,21 @@ class DataExporter:
                         <th style="width: 9%;">Views / Hora</th>
                         <th style="width: 9%;">Views / Dia</th>
                         <th style="width: 8%;">Data Envio</th>
-                        <th style="width: 11%;">Domínios</th>
+                        <th style="width: 11%;">Domínios Livres</th>
                     </tr>
                 </thead>
                 <tbody>
         """
 
-        top_videos = sorted(videos_data, key=lambda x: x.get("metrics", {}).get("daily_views", 0), reverse=True)
+        top_videos = sorted(avail_vids, key=lambda x: x.get("metrics", {}).get("daily_views", 0), reverse=True)
         if not top_videos:
-            html += "<tr><td colspan='8' style='text-align:center; color:#64748B;'>Nenhum vídeo registrado.</td></tr>"
+            html += "<tr><td colspan='8' style='text-align:center; color:#64748B;'>Nenhum vídeo registrado com oportunidades disponíveis.</td></tr>"
         else:
             for v in top_videos:
                 m = v.get("metrics", {})
                 doms = v.get("domains", [])
                 avail_d = sum(1 for d in doms if d.get("status") == "Disponível")
-                dom_summary = f"🟢 {avail_d} disp. | Total: {len(doms)}"
+                dom_summary = f"🟢 {avail_d} disp."
                 v_url = v.get("url", "")
                 v_title = v.get("title", "")
 
@@ -296,7 +376,7 @@ class DataExporter:
                         <td style="color:#D97706; font-weight:700;">{m.get('hourly_views_formatted', '0/h')}</td>
                         <td style="color:#16A34A; font-weight:800;">{m.get('daily_views_formatted', '0/dia')}</td>
                         <td>{m.get('publish_date', 'Recente')}</td>
-                        <td><b>{dom_summary}</b></td>
+                        <td><b style="color: #16A34A;">{dom_summary}</b></td>
                     </tr>
                 """
 

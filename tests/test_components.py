@@ -463,5 +463,38 @@ class TestYoutubeEspiaoCore(unittest.TestCase):
         self.assertEqual(dialog.domain_name, "dominio.com")
         self.assertEqual(len(dialog.associated_videos), 2)
 
+    def test_exporter_available_only_filter(self):
+        """Test that PDF, Excel, CSV, and TXT export ONLY available expired domains."""
+        from core.exporter import DataExporter
+
+        mixed_domains = [
+            {"root_domain": "disponivel123.com", "status": "Disponível", "total_daily_views": 100},
+            {"root_domain": "ativo-ocupado.com", "status": "Ativo", "total_daily_views": 500},
+            {"root_domain": "inativo.com", "status": "Inativo", "total_daily_views": 200},
+            {"root_domain": "disponivel-ig", "status": "Disponível", "is_instagram": True, "total_daily_views": 80}
+        ]
+        
+        # 1. Filter test
+        avail = DataExporter.get_available_domains(mixed_domains)
+        self.assertEqual(len(avail), 2)
+        self.assertTrue(all(d["status"] == "Disponível" for d in avail))
+
+        # 2. DataFrame test
+        df = DataExporter.export_domains_to_dataframe(mixed_domains, only_available=True)
+        self.assertEqual(len(df), 2)
+        self.assertIn("disponivel123.com", df["Domínio / Conta"].values)
+        self.assertNotIn("ativo-ocupado.com", df["Domínio / Conta"].values)
+
+        # 3. TXT export test
+        txt_path = "test_avail_out.txt"
+        DataExporter.export_to_txt(txt_path, mixed_domains)
+        self.assertTrue(os.path.exists(txt_path))
+        with open(txt_path, "r", encoding="utf-8") as f:
+            content = f.read()
+            self.assertIn("disponivel123.com", content)
+            self.assertNotIn("ativo-ocupado.com", content)
+        if os.path.exists(txt_path):
+            os.remove(txt_path)
+
 if __name__ == "__main__":
     unittest.main()
