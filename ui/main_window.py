@@ -99,6 +99,32 @@ class MainWindow(QMainWindow):
         self.btn_theme.clicked.connect(self._toggle_theme)
         header_layout.addWidget(self.btn_theme)
 
+        # Close Completely Button (Top Header)
+        self.btn_close_app = QPushButton("❌ Fechar Programa")
+        self.btn_close_app.setObjectName("btn_close_action")
+        self.btn_close_app.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.btn_close_app.setToolTip("Encerrar todos os processos e fechar este aplicativo totalmente (sem minimizar na bandeja).")
+        self.btn_close_app.setStyleSheet("""
+            QPushButton#btn_close_action {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #991B1B, stop:1 #DC2626);
+                color: #FFFFFF;
+                font-weight: 700;
+                font-size: 11px;
+                padding: 4px 12px;
+                border-radius: 6px;
+                border: 1px solid #EF4444;
+            }
+            QPushButton#btn_close_action:hover {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #B91C1C, stop:1 #EF4444);
+                border: 1px solid #F87171;
+            }
+            QPushButton#btn_close_action:pressed {
+                background: #7F1D1D;
+            }
+        """)
+        self.btn_close_app.clicked.connect(self._force_quit)
+        header_layout.addWidget(self.btn_close_app)
+
         lbl_version = QLabel("v1.5.0")
         lbl_version.setObjectName("header_version")
         header_layout.addWidget(lbl_version)
@@ -250,12 +276,25 @@ class MainWindow(QMainWindow):
             event.accept()
 
     def _force_quit(self):
-        """Completely stop all workers and terminate the application."""
-        if self.hunter_tab.crawler_thread and self.hunter_tab.crawler_thread.isRunning():
+        """Completely stop all workers, release instance slot, and terminate the application immediately."""
+        if hasattr(self, "hunter_tab") and self.hunter_tab.crawler_thread and self.hunter_tab.crawler_thread.isRunning():
+            reply = QMessageBox.question(
+                self,
+                "Fechar Programa",
+                "A mineração está ativa no momento. Deseja realmente parar todos os processos e fechar o programa totalmente?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return
             self.hunter_tab.crawler_thread.stop()
+        
         InstanceManager.release_instance()
-        self.tray_icon.hide()
+        if hasattr(self, "tray_icon"):
+            self.tray_icon.hide()
         QApplication.instance().quit()
+        import os
+        os._exit(0)
 
     def _open_help_dialog(self):
         """Open the Didactic Help & Methodology Dialog with current theme styling."""
