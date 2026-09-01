@@ -15,6 +15,20 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
 )
 
+# Global Exception Catcher to guarantee zero silent crashes
+def _handle_unhandled_exception(exc_type, exc_value, exc_traceback):
+    import traceback
+    err = "".join(traceback.format_exception(exc_type, exc_value, exc_traceback))
+    logging.error(f"FATAL UNCAUGHT EXCEPTION: {err}")
+
+sys.excepthook = _handle_unhandled_exception
+
+try:
+    import threading
+    threading.excepthook = lambda args: logging.error(f"THREAD EXCEPTION: {args.exc_type}: {args.exc_value}")
+except Exception:
+    pass
+
 # Ensure UTF-8 output on Windows consoles
 if sys.platform == "win32":
     try:

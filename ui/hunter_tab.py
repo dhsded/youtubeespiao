@@ -837,16 +837,17 @@ class HunterTab(QWidget):
         self.lbl_active_progress_pill.setText("Concluído")
         self.status_label.setText(f"Varredura concluída em {time_str}! {len(self.all_videos)} vídeos e {len(self.all_domains)} oportunidades.")
         self._append_log(f"✅ Mineração finalizada ({time_str})! Disponíveis: {summary.get('available_domains', 0)} | Total: {summary.get('total_domains', 0)}")
-        QMessageBox.information(
-            self,
-            "Mineração Concluída",
-            f"Varredura finalizada com sucesso!\n\n"
-            f"• Tempo total: {time_str} (Média: {avg_str})\n"
-            f"• Vídeos analisados: {len(self.all_videos)}\n"
-            f"• Domínios / Contas IG encontradas: {len(self.all_domains)}\n"
-            f"• Oportunidades DISPONÍVEIS para compra/claim: {summary.get('available_domains', 0)}\n\n"
-            f"💾 Cópia de segurança auto-salva na pasta Downloads."
-        )
+        if self.isVisible() and not self.isMinimized():
+            QMessageBox.information(
+                self,
+                "Mineração Concluída",
+                f"Varredura finalizada com sucesso!\n\n"
+                f"• Tempo total: {time_str} (Média: {avg_str})\n"
+                f"• Vídeos analisados: {len(self.all_videos)}\n"
+                f"• Domínios / Contas IG encontradas: {len(self.all_domains)}\n"
+                f"• Oportunidades DISPONÍVEIS para compra/claim: {summary.get('available_domains', 0)}\n\n"
+                f"💾 Cópia de segurança auto-salva na pasta Downloads."
+            )
 
     def _on_error_occurred(self, err_msg: str):
         self.btn_start.setEnabled(True)
@@ -858,7 +859,8 @@ class HunterTab(QWidget):
         self.status_label.setText(f"Erro: {err_msg}")
         self.lbl_active_keyword.setText("❌ Mineração interrompida por erro.")
         self._append_log(f"❌ Erro na varredura: {err_msg}")
-        QMessageBox.critical(self, "Erro na Varredura", f"Ocorreu um erro:\n{err_msg}")
+        if self.isVisible() and not self.isMinimized():
+            QMessageBox.critical(self, "Erro na Varredura", f"Ocorreu um erro:\n{err_msg}")
 
     def _update_stat_cards(self):
         total_vids = len(self.all_videos)

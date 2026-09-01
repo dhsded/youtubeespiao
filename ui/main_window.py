@@ -20,7 +20,7 @@ from PyQt6.QtGui import (
 
 from typing import Optional, Dict
 from ui.styles import DARK_THEME, LIGHT_THEME
-from core.instance_manager import InstanceManager
+from core.instance_manager import InstanceManager, get_instance_color
 from ui.hunter_tab import HunterTab
 from ui.browser_view import BrowserView
 from ui.settings_tab import SettingsTab
@@ -61,20 +61,21 @@ class MainWindow(QMainWindow):
         lbl_subtitle = QLabel("•  Minerador de Vídeos, Métricas & Validador de Domínios Expirados")
         lbl_subtitle.setObjectName("header_subtitle")
 
-        # Top Instance Identification Badge
+        # Top Instance Identification Badge with Unique Color per Instance
+        color_cfg = get_instance_color(self.instance_number)
         self.badge_instance = QLabel(f"🔢 INSTÂNCIA #{self.instance_number}")
         self.badge_instance.setObjectName("badge_instance")
-        self.badge_instance.setStyleSheet("""
-            QLabel#badge_instance {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #0284C7, stop:1 #2563EB);
-                color: #FFFFFF;
+        self.badge_instance.setStyleSheet(f"""
+            QLabel#badge_instance {{
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 {color_cfg['start']}, stop:1 {color_cfg['end']});
+                color: {color_cfg['text']};
                 font-weight: 800;
                 font-size: 11px;
-                padding: 4px 10px;
+                padding: 4px 12px;
                 border-radius: 12px;
-                border: 1px solid #38BDF8;
+                border: 1px solid {color_cfg['border']};
                 letter-spacing: 0.5px;
-            }
+            }}
         """)
 
         header_layout.addWidget(lbl_logo)
@@ -146,22 +147,16 @@ class MainWindow(QMainWindow):
         badge_x = 64 - badge_size
         badge_y = 0
 
+        # Unique color per instance number
+        color_cfg = get_instance_color(instance_num)
+
         # Dark border
         painter.setPen(QPen(QColor("#0F172A"), 3))
-        # Instance 1 gets vibrant Red, Instance 2+ gets bright Royal Blue / Gold
-        if instance_num == 1:
-            painter.setBrush(QBrush(QColor("#EF4444")))
-        elif instance_num == 2:
-            painter.setBrush(QBrush(QColor("#2563EB")))
-        elif instance_num == 3:
-            painter.setBrush(QBrush(QColor("#10B981")))
-        else:
-            painter.setBrush(QBrush(QColor("#F59E0B")))
-
+        painter.setBrush(QBrush(QColor(color_cfg["tray"])))
         painter.drawEllipse(badge_x, badge_y, badge_size, badge_size)
 
-        # Draw white bold instance number
-        painter.setPen(QColor("#FFFFFF"))
+        # Draw bold instance number
+        painter.setPen(QColor(color_cfg["text"]))
         font = QFont("Segoe UI", 13, QFont.Weight.Bold)
         painter.setFont(font)
         painter.drawText(badge_x, badge_y, badge_size, badge_size, Qt.AlignmentFlag.AlignCenter, str(instance_num))
@@ -221,27 +216,13 @@ class MainWindow(QMainWindow):
         if event.type() == QEvent.Type.WindowStateChange:
             if self.isMinimized():
                 self.hide()
-                if self.tray_icon.isSystemTrayAvailable():
-                    self.tray_icon.showMessage(
-                        "YouTube Espião",
-                        "O programa continua executando em segundo plano na bandeja do sistema.",
-                        QSystemTrayIcon.MessageIcon.Information,
-                        2500
-                    )
         super().changeEvent(event)
 
     def closeEvent(self, event):
-        # If crawler is currently active, minimize to tray instead of closing abruptly
+        # If crawler is currently active, minimize to tray without blocking notifications
         if self.hunter_tab.crawler_thread and self.hunter_tab.crawler_thread.isRunning():
             event.ignore()
             self.hide()
-            if self.tray_icon.isSystemTrayAvailable():
-                self.tray_icon.showMessage(
-                    "YouTube Espião",
-                    "Mineração ativa! O programa continua executando na bandeja do sistema.",
-                    QSystemTrayIcon.MessageIcon.Information,
-                    2500
-                )
         else:
             InstanceManager.release_instance()
             event.accept()

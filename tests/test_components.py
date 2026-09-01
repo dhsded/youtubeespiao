@@ -525,8 +525,8 @@ class TestYoutubeEspiaoCore(unittest.TestCase):
         self.assertFalse(any(sample_ig in d.get("root_domain", "") for d in res2))
 
     def test_instance_manager(self):
-        """Test multi-instance claiming, numbering, and releasing."""
-        from core.instance_manager import InstanceManager
+        """Test multi-instance claiming, numbering, releasing, and color palettes."""
+        from core.instance_manager import InstanceManager, get_instance_color
         inst_num = InstanceManager.claim_instance_number()
         self.assertGreaterEqual(inst_num, 1)
         self.assertEqual(InstanceManager.get_instance_number(), inst_num)
@@ -534,6 +534,13 @@ class TestYoutubeEspiaoCore(unittest.TestCase):
         # Test PID validation
         self.assertTrue(InstanceManager._is_pid_running(os.getpid()))
         self.assertFalse(InstanceManager._is_pid_running(99999999))
+
+        # Test colors
+        c1 = get_instance_color(1)
+        c2 = get_instance_color(2)
+        self.assertIn("start", c1)
+        self.assertIn("tray", c1)
+        self.assertNotEqual(c1["start"], c2["start"])
 
         InstanceManager.release_instance()
 
