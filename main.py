@@ -1,11 +1,13 @@
 """
 YouTube Espião & Hunter Browser.
-Ponto de entrada principal da aplicação desktop.
+Ponto de entrada principal da aplicação desktop com suporte a múltiplas instâncias concorrentes.
 """
 
 import sys
 import os
+import tempfile
 import logging
+import ctypes
 
 # Set up logging
 logging.basicConfig(
@@ -21,7 +23,17 @@ if sys.platform == "win32":
     except Exception:
         pass
 
-import ctypes
+# Multi-Instance Registration & Chromium Profile Isolation
+from core.instance_manager import InstanceManager
+instance_num = InstanceManager.claim_instance_number()
+
+# Set isolated Chromium user data directory before QtWebEngine initializes
+profile_dir = os.path.join(tempfile.gettempdir(), f"yt_espiao_profile_{instance_num}_{os.getpid()}")
+os.makedirs(profile_dir, exist_ok=True)
+sys.argv.append(f"--user-data-dir={profile_dir}")
+sys.argv.append(f"--disk-cache-dir={profile_dir}")
+os.environ["QTWEBENGINE_STORAGE_PATH"] = profile_dir
+
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QIcon
@@ -31,7 +43,7 @@ def main():
     # Set Windows App ID for taskbar icon
     if sys.platform == "win32":
         try:
-            myappid = "youtube.espiao.hunter.browser.1.0"
+            myappid = f"youtube.espiao.hunter.browser.{instance_num}"
             ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
         except Exception:
             pass
@@ -44,7 +56,7 @@ def main():
 
     app = QApplication(sys.argv)
     app.setApplicationName("YouTube Espião & Hunter Browser")
-    app.setApplicationDisplayName("YouTube Espião")
+    app.setApplicationDisplayName(f"YouTube Espião #{instance_num}")
 
     # Set App Icon
     base_dir = os.path.dirname(os.path.abspath(__file__))

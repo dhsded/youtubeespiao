@@ -17,12 +17,25 @@ import pandas as pd
 logger = logging.getLogger("AutoSaveManager")
 
 class AutoSaveManager:
-    def __init__(self):
+    def __init__(self, instance_number: Optional[int] = None):
+        if instance_number is None:
+            try:
+                from core.instance_manager import InstanceManager
+                self.instance_number = InstanceManager.get_instance_number()
+            except Exception:
+                self.instance_number = 1
+        else:
+            self.instance_number = instance_number
+
         # 1. Determine AppData storage path
         appdata = os.getenv("APPDATA") or os.path.expanduser("~")
         self.save_dir = os.path.join(appdata, "YouTube Espiao")
         os.makedirs(self.save_dir, exist_ok=True)
-        self.session_file = os.path.join(self.save_dir, "autosave_session.json")
+        
+        if self.instance_number > 1:
+            self.session_file = os.path.join(self.save_dir, f"autosave_session_inst_{self.instance_number}.json")
+        else:
+            self.session_file = os.path.join(self.save_dir, "autosave_session.json")
 
         # 2. Determine User Downloads path for emergency exported sheets
         user_home = os.path.expanduser("~")

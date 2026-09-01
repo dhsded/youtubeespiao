@@ -17,6 +17,7 @@ from PyQt6.QtGui import QFont, QCursor, QIcon, QAction
 
 from typing import Optional, Dict
 from ui.styles import DARK_THEME, LIGHT_THEME
+from core.instance_manager import InstanceManager
 from ui.hunter_tab import HunterTab
 from ui.browser_view import BrowserView
 from ui.settings_tab import SettingsTab
@@ -25,7 +26,8 @@ from ui.help_dialog import HelpDialog
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("YouTube Espião & Hunter Browser — Rastreador de Domínios Expirados")
+        self.instance_number = InstanceManager.get_instance_number()
+        self.setWindowTitle(f"YouTube Espião #{self.instance_number} — Rastreador de Domínios Expirados")
         self.resize(1380, 890)
         self.setMinimumSize(1040, 700)
         
@@ -56,7 +58,24 @@ class MainWindow(QMainWindow):
         lbl_subtitle = QLabel("•  Minerador de Vídeos, Métricas & Validador de Domínios Expirados")
         lbl_subtitle.setObjectName("header_subtitle")
 
+        # Top Instance Identification Badge
+        self.badge_instance = QLabel(f"🔢 INSTÂNCIA #{self.instance_number}")
+        self.badge_instance.setObjectName("badge_instance")
+        self.badge_instance.setStyleSheet("""
+            QLabel#badge_instance {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #0284C7, stop:1 #2563EB);
+                color: #FFFFFF;
+                font-weight: 800;
+                font-size: 11px;
+                padding: 4px 10px;
+                border-radius: 12px;
+                border: 1px solid #38BDF8;
+                letter-spacing: 0.5px;
+            }
+        """)
+
         header_layout.addWidget(lbl_logo)
+        header_layout.addWidget(self.badge_instance)
         header_layout.addWidget(lbl_subtitle)
         header_layout.addStretch()
 
@@ -178,12 +197,14 @@ class MainWindow(QMainWindow):
                     2500
                 )
         else:
+            InstanceManager.release_instance()
             event.accept()
 
     def _force_quit(self):
         """Completely stop all workers and terminate the application."""
         if self.hunter_tab.crawler_thread and self.hunter_tab.crawler_thread.isRunning():
             self.hunter_tab.crawler_thread.stop()
+        InstanceManager.release_instance()
         self.tray_icon.hide()
         QApplication.instance().quit()
 

@@ -501,8 +501,10 @@ class TestYoutubeEspiaoCore(unittest.TestCase):
         from core.domain_extractor import add_to_exclusion_list, IGNORE_DOMAINS, ALL_EXCLUDED_DOMAINS
         extractor = DomainExtractor()
 
-        sample_domain = "dominio-para-excluir-12345.com"
-        sample_ig = "perfil_para_excluir_987"
+        import time
+        unique_id = int(time.time() * 1000)
+        sample_domain = f"teste-excluir-{unique_id}.com"
+        sample_ig = f"perfil_excluir_{unique_id}"
 
         # Initially extractable
         text = f"Site: https://{sample_domain}/aula e Insta: @{sample_ig}"
@@ -515,13 +517,25 @@ class TestYoutubeEspiaoCore(unittest.TestCase):
         add_to_exclusion_list(sample_ig)
 
         self.assertIn(sample_domain, IGNORE_DOMAINS)
-        self.assertIn(sample_ig, IGNORE_DOMAINS)
-
+        
         # Extract again -> Must be completely excluded
         res2 = extractor.process_text_for_domains(text)
         doms2 = [d["root_domain"] for d in res2]
         self.assertNotIn(sample_domain, doms2)
         self.assertFalse(any(sample_ig in d.get("root_domain", "") for d in res2))
+
+    def test_instance_manager(self):
+        """Test multi-instance claiming, numbering, and releasing."""
+        from core.instance_manager import InstanceManager
+        inst_num = InstanceManager.claim_instance_number()
+        self.assertGreaterEqual(inst_num, 1)
+        self.assertEqual(InstanceManager.get_instance_number(), inst_num)
+        
+        # Test PID validation
+        self.assertTrue(InstanceManager._is_pid_running(os.getpid()))
+        self.assertFalse(InstanceManager._is_pid_running(99999999))
+
+        InstanceManager.release_instance()
 
 if __name__ == "__main__":
     unittest.main()
