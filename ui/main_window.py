@@ -13,7 +13,10 @@ from PyQt6.QtWidgets import (
     QSystemTrayIcon, QMenu
 )
 from PyQt6.QtCore import Qt, QEvent
-from PyQt6.QtGui import QFont, QCursor, QIcon, QAction
+from PyQt6.QtGui import (
+    QFont, QCursor, QIcon, QAction,
+    QPainter, QBrush, QPen, QColor, QPixmap
+)
 
 from typing import Optional, Dict
 from ui.styles import DARK_THEME, LIGHT_THEME
@@ -121,19 +124,62 @@ class MainWindow(QMainWindow):
 
         main_layout.addWidget(self.main_tabs, 1)
 
+    def _create_tray_icon_with_badge(self, instance_num: int) -> QIcon:
+        """Dynamically render a crisp, high-visibility instance number badge onto the system tray icon."""
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        icon_path = os.path.join(base_dir, "assets", "icon.png")
+        if not os.path.exists(icon_path):
+            icon_path = "assets/icon.png"
+
+        pixmap = QPixmap(icon_path) if os.path.exists(icon_path) else QPixmap()
+        if pixmap.isNull():
+            pixmap = QPixmap(64, 64)
+            pixmap.fill(QColor("#0F172A"))
+        else:
+            pixmap = pixmap.scaled(64, 64, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        # Draw circular instance badge on top right
+        badge_size = 28
+        badge_x = 64 - badge_size
+        badge_y = 0
+
+        # Dark border
+        painter.setPen(QPen(QColor("#0F172A"), 3))
+        # Instance 1 gets vibrant Red, Instance 2+ gets bright Royal Blue / Gold
+        if instance_num == 1:
+            painter.setBrush(QBrush(QColor("#EF4444")))
+        elif instance_num == 2:
+            painter.setBrush(QBrush(QColor("#2563EB")))
+        elif instance_num == 3:
+            painter.setBrush(QBrush(QColor("#10B981")))
+        else:
+            painter.setBrush(QBrush(QColor("#F59E0B")))
+
+        painter.drawEllipse(badge_x, badge_y, badge_size, badge_size)
+
+        # Draw white bold instance number
+        painter.setPen(QColor("#FFFFFF"))
+        font = QFont("Segoe UI", 13, QFont.Weight.Bold)
+        painter.setFont(font)
+        painter.drawText(badge_x, badge_y, badge_size, badge_size, Qt.AlignmentFlag.AlignCenter, str(instance_num))
+        painter.end()
+
+        return QIcon(pixmap)
+
     def _init_tray_icon(self):
-        """Initialize System Tray Icon with background execution menu."""
+        """Initialize System Tray Icon with background execution menu and dynamic instance badge."""
         self.tray_icon = QSystemTrayIcon(self)
         
-        icon_path = "assets/icon.ico"
-        if os.path.exists(icon_path):
-            self.tray_icon.setIcon(QIcon(icon_path))
-        else:
-            self.tray_icon.setIcon(self.windowIcon())
+        # Set dynamic tray icon with clear instance number badge
+        tray_icon = self._create_tray_icon_with_badge(self.instance_number)
+        self.tray_icon.setIcon(tray_icon)
 
         tray_menu = QMenu()
 
-        action_restore = QAction("🎯 Abrir YouTube Espião", self)
+        action_restore = QAction(f"🎯 Abrir YouTube Espião #{self.instance_number}", self)
         action_restore.triggered.connect(self._restore_from_tray)
         tray_menu.addAction(action_restore)
 
@@ -158,7 +204,7 @@ class MainWindow(QMainWindow):
         tray_menu.addAction(action_quit)
 
         self.tray_icon.setContextMenu(tray_menu)
-        self.tray_icon.setToolTip("YouTube Espião & Hunter Browser — Executando em segundo plano")
+        self.tray_icon.setToolTip(f"YouTube Espião #{self.instance_number} — Mineração em segundo plano")
         self.tray_icon.activated.connect(self._on_tray_activated)
         self.tray_icon.show()
 

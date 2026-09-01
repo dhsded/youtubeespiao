@@ -40,6 +40,7 @@ class CrawlerThread(QThread):
     domain_found = pyqtSignal(dict)
     live_video_analyzed = pyqtSignal(str, str)
     progress_updated = pyqtSignal(int, int, str)
+    active_keyword_changed = pyqtSignal(str, str, int, int)
     finished_crawl = pyqtSignal(dict)
     error_occurred = pyqtSignal(str)
 
@@ -105,10 +106,11 @@ class CrawlerThread(QThread):
             while True:
                 if self.search_mode == "channels":
                     # Channel Mode: Iterate through channels
-                    for ch in self.keywords:
+                    for idx_ch, ch in enumerate(self.keywords):
                         if self._is_interrupted:
                             break
                         self._wait_if_paused()
+                        self.active_keyword_changed.emit(ch, "Canal do YouTube", idx_ch + 1, len(self.keywords))
                         self.progress_updated.emit(0, self.max_videos, f"[Ciclo {cycle}] Coletando canal: {ch}...")
 
                         def on_prog_wrapped_ch(cur, tot, msg):
@@ -135,7 +137,7 @@ class CrawlerThread(QThread):
 
                 else:
                     # Keyword Mode: Standard search
-                    for kw in self.keywords:
+                    for idx_kw, kw in enumerate(self.keywords):
                         if self._is_interrupted:
                             break
                         
@@ -154,6 +156,7 @@ class CrawlerThread(QThread):
                             gl = task.get("gl", "BR")
 
                             task_label = f"{flag} {lang_name} ('{query}')"
+                            self.active_keyword_changed.emit(query, f"{flag} {lang_name}", idx_kw + 1, len(self.keywords))
                             self.progress_updated.emit(0, self.max_videos, f"[Ciclo {cycle}] {task_label}...")
 
                             def on_prog_wrapped(cur, tot, msg):
@@ -264,7 +267,41 @@ class HunterTab(QWidget):
         self.lbl_telemetry.setStyleSheet("color: #38BDF8; font-weight: 700; font-size: 12px;")
         status_header_layout.addWidget(self.lbl_telemetry)
 
-        status_bar_layout.addLayout(status_header_layout)
+        # Active Keyword / Target HUD Banner (prominent highlight of current mining query)
+        self.active_target_card = QFrame()
+        self.active_target_card.setObjectName("active_target_card")
+        self.active_target_card.setStyleSheet("""
+            QFrame#active_target_card {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #0F172A, stop:0.5 #1E293B, stop:1 #0F172A);
+                border: 2px solid #0284C7;
+                border-radius: 8px;
+                padding: 6px 12px;
+            }
+        """)
+        active_layout = QHBoxLayout(self.active_target_card)
+        active_layout.setContentsMargins(10, 4, 10, 4)
+        active_layout.setSpacing(10)
+
+        self.lbl_active_prefix = QLabel("🔍 MINERANDO AGORA:")
+        self.lbl_active_prefix.setStyleSheet("color: #38BDF8; font-weight: 800; font-size: 11px; letter-spacing: 0.5px;")
+        active_layout.addWidget(self.lbl_active_prefix)
+
+        self.lbl_active_keyword = QLabel("Aguardando início da mineração...")
+        self.lbl_active_keyword.setStyleSheet("color: #F8FAFC; font-weight: 800; font-size: 13px;")
+        active_layout.addWidget(self.lbl_active_keyword, 1)
+
+        self.lbl_active_progress_pill = QLabel("Termo -- / --")
+        self.lbl_active_progress_pill.setStyleSheet("""
+            background-color: #0369A1;
+            color: #FFFFFF;
+            font-weight: 800;
+            font-size: 11px;
+            padding: 3px 10px;
+            border-radius: 10px;
+        """)
+        active_layout.addWidget(self.lbl_active_progress_pill)
+
+        status_bar_layout.addWidget(self.active_target_card)
 
         self.progress_bar = QProgressBar()
         self.progress_bar.setFixedHeight(12)
@@ -671,9 +708,23 @@ class HunterTab(QWidget):
         self.crawler_thread.video_found.connect(self._on_video_found)
         self.crawler_thread.domain_found.connect(self._on_domain_found)
         self.crawler_thread.progress_updated.connect(self._on_progress_updated)
+        self.crawler_thread.active_keyword_changed.connect(self._on_active_keyword_changed)
         self.crawler_thread.finished_crawl.connect(self._on_finished_crawl)
         self.crawler_thread.error_occurred.connect(self._on_error_occurred)
         self.crawler_thread.start()
+
+    def _on_active_keyword_changed(self, target: str, category: str, current_idx: int, total_count: int):
+        """Update the prominent active keyword HUD display in real-time."""
+        self.lbl_active_keyword.setText(f"🎯 \"{target}\"  •  {category}")
+        self.lbl_active_progress_pill.setText(f"Alvo {current_idx} de {total_count}")
+        self.active_target_card.setStyleSheet("""
+            QFrame#active_target_card {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #0F172A, stop:0.5 #1E293B, stop:1 #0F172A);
+                border: 2px solid #38BDF8;
+                border-radius: 8px;
+                padding: 6px 12px;
+            }
+        """)
 
     def _on_live_video_analyzed(self, url: str, title: str):
         self.live_video_stream.emit(url, title)
@@ -782,6 +833,8 @@ class HunterTab(QWidget):
         avg_str = f"{(elapsed / max(1, len(self.all_videos))):.1f}s/vídeo" if self.all_videos else "0s"
 
         self.lbl_telemetry.setText(f"✅ Concluído em {time_str}  •  ⚡ Média: {avg_str}")
+        self.lbl_active_keyword.setText("✅ Mineração finalizada com sucesso!")
+        self.lbl_active_progress_pill.setText("Concluído")
         self.status_label.setText(f"Varredura concluída em {time_str}! {len(self.all_videos)} vídeos e {len(self.all_domains)} oportunidades.")
         self._append_log(f"✅ Mineração finalizada ({time_str})! Disponíveis: {summary.get('available_domains', 0)} | Total: {summary.get('total_domains', 0)}")
         QMessageBox.information(
@@ -803,6 +856,7 @@ class HunterTab(QWidget):
         self.is_paused = False
         self.telemetry_timer.stop()
         self.status_label.setText(f"Erro: {err_msg}")
+        self.lbl_active_keyword.setText("❌ Mineração interrompida por erro.")
         self._append_log(f"❌ Erro na varredura: {err_msg}")
         QMessageBox.critical(self, "Erro na Varredura", f"Ocorreu um erro:\n{err_msg}")
 
@@ -873,6 +927,8 @@ class HunterTab(QWidget):
             self.crawler_thread.crawler.clear_seen_videos()
         self.log_view.clear()
         self.progress_bar.setValue(0)
+        self.lbl_active_keyword.setText("Aguardando início da mineração...")
+        self.lbl_active_progress_pill.setText("Termo -- / --")
         self.lbl_telemetry.setText("⏱️ Tempo: 00:00  •  ⚡ Média: -- s/vídeo  •  ⏳ Restante: --")
         self._update_stat_cards()
         self.autosave_manager.clear_saved_session()

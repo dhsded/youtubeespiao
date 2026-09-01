@@ -57,6 +57,7 @@ def main():
     app = QApplication(sys.argv)
     app.setApplicationName("YouTube Espião & Hunter Browser")
     app.setApplicationDisplayName(f"YouTube Espião #{instance_num}")
+    app.setQuitOnLastWindowClosed(False)
 
     # Set App Icon
     base_dir = os.path.dirname(os.path.abspath(__file__))
