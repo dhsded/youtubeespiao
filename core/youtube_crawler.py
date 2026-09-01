@@ -722,24 +722,11 @@ class YouTubeCrawler:
                 initial_videos.extend(rel_vids)
                 if not initial_videos and not related_suggestions_queue:
                     break
-            for c in candidates:
-                u = c.get("url")
-                if u and u not in seen_urls:
-                    seen_urls.add(u)
-                    collected_video_candidates.append(c)
 
-            if len(collected_video_candidates) >= max_videos * 2 and max_videos < 50000:
+            if not initial_videos:
                 break
 
-        total_candidates = len(collected_video_candidates)
-        if on_progress:
-            on_progress(0, max_videos, f"{target_info}Encontrados {total_candidates} vídeos candidatos. Iniciando mineração...")
-
-        # 4. Deep Scrape & Validate Candidates
-        for idx, v_item in enumerate(collected_video_candidates):
-            if self._is_stopped or len(scanned_videos) >= max_videos:
-                break
-
+            v_item = initial_videos.pop(0)
             vid_id = v_item.get("id")
             if not vid_id or vid_id in self.seen_video_ids:
                 continue
