@@ -18,12 +18,27 @@ import PyInstaller.__main__
 
 def build():
     spec_file = "YoutubeEspiao.spec"
-    PyInstaller.__main__.run([
-        spec_file,
-        "--noconfirm",
-        "--clean"
-    ])
-    print("\n[+] Build completed successfully! Executable is located in dist/YouTubeEspiao/YouTubeEspiao.exe")
+    if os.path.exists(spec_file):
+        args = [spec_file, "--noconfirm", "--clean"]
+    else:
+        args = [
+            "main.py",
+            "--noconfirm",
+            "--onedir",
+            "--windowed",
+            "--name=YouTube Espiao",
+            "--icon=assets/icon.ico",
+            "--add-data=assets;assets",
+            "--collect-all=PyQt6",
+            "--collect-all=PyQt6_WebEngine",
+            "--collect-all=scrapetube",
+            "--collect-all=yt_dlp",
+            "--collect-all=tldextract",
+            "--collect-all=dns",
+            "--collect-all=whois"
+        ]
+    PyInstaller.__main__.run(args)
+    print("\n[+] Build completed successfully! Executable is located in dist/YouTube Espiao/YouTube Espiao.exe")
 
 if __name__ == "__main__":
     build()
