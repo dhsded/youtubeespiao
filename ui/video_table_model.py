@@ -110,14 +110,14 @@ class VideoTableView(QWidget):
         "Miniatura",
         "Título do Vídeo",
         "Canal",
-        "Visualizações Totais",
-        "Views nos Últimos 90 Dias",
-        "⚡ VPH (Views/Hora)",
-        "Tráfego Diário Estimado",
-        "Views / Mês (Estimado)",
-        "Views / Ano (Estimado)",
+        "Total Views",
+        "Views 90 Dias",
+        "⚡ VPH",
+        "Tráfego / Dia",
+        "Views / Mês",
+        "Views / Ano",
         "Data de Envio",
-        "Domínios Encontrados",
+        "Domínios",
         "Ação"
     ]
 
@@ -675,18 +675,18 @@ class DomainTableView(QWidget):
         "Status",
         "Tipo",
         "Domínio / Conta IG",
-        "⚖️ Segurança de Marca",
-        "Vídeos Onde Aparece",
-        "Soma Tráfego Diário",
-        "Soma Views 90 Dias",
-        "Soma Views Totais",
-        "Vídeo Onde Foi Encontrado",
+        "⚖️ Risco Marca",
+        "Qtd Vídeos",
+        "Soma Tráfego / Dia",
+        "Views 90 Dias",
+        "Total Views",
+        "Vídeo de Origem",
         "Data de Envio",
-        "⚡ VPH Soma (Views/Hora)",
-        "Views / Mês (Soma)",
-        "Views / Ano (Soma)",
+        "⚡ VPH",
+        "Views / Mês",
+        "Views / Ano",
         "Detalhes / WHOIS",
-        "Ação de Compra / Claim"
+        "Ação Compra / Claim"
     ]
 
     def __init__(self, parent=None):

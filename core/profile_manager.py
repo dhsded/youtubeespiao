@@ -70,6 +70,80 @@ def save_default_profile(profile_data: Dict[str, Any]) -> bool:
         logger.error(f"Failed to save default profile to {path}: {e}")
         return False
 
+def get_named_profiles_path() -> str:
+    """Returns the persistent location for custom named profiles JSON file."""
+    app_data = os.environ.get("APPDATA")
+    if app_data and os.path.exists(app_data):
+        folder = os.path.join(app_data, "YouTubeEspiao")
+    else:
+        folder = os.path.join(os.path.expanduser("~"), ".youtube_espiao")
+    os.makedirs(folder, exist_ok=True)
+    return os.path.join(folder, "named_profiles.json")
+
+def get_named_profiles() -> Dict[str, Dict[str, Any]]:
+    """Returns all saved named profiles, including default built-in presets."""
+    path = get_named_profiles_path()
+    profiles: Dict[str, Dict[str, Any]] = {
+        "⭐ Modo Padrão": dict(DEFAULT_PROFILE),
+        "🔥 Alto Impacto (50k+ Views BR)": {
+            **DEFAULT_PROFILE,
+            "target_lang": "pt",
+            "min_views": 50000,
+            "max_videos": 100,
+            "fast_mode": True
+        },
+        "🌐 Varredura Global Exaustiva": {
+            **DEFAULT_PROFILE,
+            "target_lang": "global",
+            "unlimited_videos": True,
+            "max_videos": 100000,
+            "min_views": 10000,
+            "fast_mode": True
+        }
+    }
+    if os.path.exists(path):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                saved = json.load(f)
+                if isinstance(saved, dict):
+                    profiles.update(saved)
+        except Exception as e:
+            logger.warning(f"Failed to load named profiles: {e}")
+    return profiles
+
+def save_named_profile(name: str, profile_data: Dict[str, Any]) -> bool:
+    """Saves or updates a named configuration preset."""
+    path = get_named_profiles_path()
+    try:
+        profiles = get_named_profiles()
+        clean_name = name.strip()
+        if not clean_name:
+            return False
+        merged = dict(DEFAULT_PROFILE)
+        merged.update(profile_data)
+        profiles[clean_name] = merged
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(profiles, f, indent=4, ensure_ascii=False)
+        return True
+    except Exception as e:
+        logger.error(f"Failed to save named profile '{name}': {e}")
+        return False
+
+def delete_named_profile(name: str) -> bool:
+    """Deletes a custom named profile if it exists."""
+    path = get_named_profiles_path()
+    try:
+        profiles = get_named_profiles()
+        if name in profiles:
+            del profiles[name]
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(profiles, f, indent=4, ensure_ascii=False)
+            return True
+        return False
+    except Exception as e:
+        logger.error(f"Failed to delete profile '{name}': {e}")
+        return False
+
 def launch_instance_with_target(target: str, autostart: bool = True) -> bool:
     """
     Spawns a new independent instance of YouTube Espião for the specified search term/channel,

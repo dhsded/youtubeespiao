@@ -31,7 +31,10 @@ from core.translator import get_language_list, expand_queries_for_language, AVAI
 from core.metrics_calculator import format_number
 from core.exporter import DataExporter
 from core.autosave_manager import AutoSaveManager
-from core.profile_manager import load_default_profile, save_default_profile, launch_instance_with_target
+from core.profile_manager import (
+    load_default_profile, save_default_profile, launch_instance_with_target,
+    get_named_profiles, save_named_profile, delete_named_profile
+)
 from ui.video_table_model import VideoTableView, DomainTableView
 from ui.settings_tab import APP_SETTINGS
 
@@ -314,7 +317,10 @@ class HunterTab(QWidget):
         self.telemetry_timer.setInterval(500)
         self.telemetry_timer.timeout.connect(self._update_telemetry)
 
+        self.named_profiles: Dict[str, Dict[str, Any]] = {}
+
         self._init_ui()
+        self._reload_presets_combo()
         self._restore_default_profile(silent=True)
         self._restore_previous_session_if_any()
 
@@ -470,193 +476,59 @@ class HunterTab(QWidget):
         panel = QFrame()
         panel.setObjectName("controls_container")
         panel_layout = QVBoxLayout(panel)
-        panel_layout.setContentsMargins(14, 12, 14, 12)
-        panel_layout.setSpacing(10)
+        panel_layout.setContentsMargins(14, 10, 14, 10)
+        panel_layout.setSpacing(8)
 
-        # Row 1: Mode Switcher, Input, Language / Date / Channels
+        # ----------------------------------------------------
+        # LINHA 1: Alvo da Busca & Modos de Configuração Salvos
+        # ----------------------------------------------------
         row1 = QHBoxLayout()
         row1.setSpacing(8)
 
-        # Mode Switcher Dropdown
+        # Mode Selector
         self.combo_mode = QComboBox()
         self.combo_mode.addItem("🎯 Palavras-chave", "keywords")
         self.combo_mode.addItem("📺 Canais do YouTube", "channels")
-        self.combo_mode.setMinimumWidth(165)
-        self.combo_mode.setMaximumWidth(190)
+        self.combo_mode.setMinimumWidth(155)
+        self.combo_mode.setMaximumWidth(175)
         self.combo_mode.currentIndexChanged.connect(self._on_search_mode_changed)
         row1.addWidget(self.combo_mode)
 
+        # Search Target Input Bar
         self.input_target = QLineEdit()
-        self.input_target.setPlaceholderText("Digite termos de busca (ex: GTA, dropshipping, marketing digital)...")
-        self.input_target.setMinimumWidth(220)
+        self.input_target.setPlaceholderText("Digite termos de busca ou canais (ex: GTA, dropshipping, receitas fitness)...")
+        self.input_target.setMinimumWidth(260)
         self.input_target.returnPressed.connect(self._on_start_or_resume)
-        row1.addWidget(self.input_target, 3)
+        row1.addWidget(self.input_target, 1)
 
-        # Language Selector & Country Exclusion
-        self.combo_lang = QComboBox()
-        for l in get_language_list():
-            self.combo_lang.addItem(l["label"], l["code"])
-        self.combo_lang.setMinimumWidth(180)
-        self.combo_lang.setMaximumWidth(220)
-        self.combo_lang.currentIndexChanged.connect(self._on_lang_changed)
-        row1.addWidget(self.combo_lang)
+        # Saved Preset Mode Selector (Named Profiles List)
+        lbl_presets = QLabel("📁 Modo Salvo:")
+        lbl_presets.setStyleSheet("font-weight: 600; color: #94A3B8;")
+        row1.addWidget(lbl_presets)
 
-        self.btn_exclude_countries = QPushButton("🚫 Excluir Países...")
-        self.btn_exclude_countries.setToolTip("Configurar países ou idiomas a serem excluídos das buscas globais.")
-        self.btn_exclude_countries.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        self.btn_exclude_countries.clicked.connect(self._open_country_exclusion_dialog)
-        row1.addWidget(self.btn_exclude_countries)
+        self.combo_presets = QComboBox()
+        self.combo_presets.setMinimumWidth(190)
+        self.combo_presets.setMaximumWidth(250)
+        self.combo_presets.currentIndexChanged.connect(self._on_preset_selected)
+        row1.addWidget(self.combo_presets)
 
-        # Date & Year Range Selector
-        self.combo_date = QComboBox()
-        self.combo_date.addItem("🌐 Todas as Datas (Global)", "all_time")
-        self.combo_date.addItem("📅 Ano de 2026 (Atual)", "2026")
-        self.combo_date.addItem("📆 Ano de 2025", "2025")
-        self.combo_date.addItem("📆 Ano de 2024", "2024")
-        self.combo_date.addItem("📆 Ano de 2023", "2023")
-        self.combo_date.addItem("📆 Ano de 2022", "2022")
-        self.combo_date.addItem("📆 Ano de 2021", "2021")
-        self.combo_date.addItem("📆 Ano de 2020", "2020")
-        self.combo_date.addItem("📆 Ano de 2019", "2019")
-        self.combo_date.addItem("📆 Ano de 2018", "2018")
-        self.combo_date.addItem("🎯 Intervalo de Anos...", "custom_range")
-        self.combo_date.addItem("⏱️ Este Mês", "this_month")
-        self.combo_date.addItem("🗓️ Esta Semana", "this_week")
-        self.combo_date.addItem("🔥 Últimas 24 Horas", "today")
-        self.combo_date.setMinimumWidth(180)
-        self.combo_date.setMaximumWidth(220)
-        self.combo_date.currentIndexChanged.connect(self._on_date_filter_changed)
-        row1.addWidget(self.combo_date)
+        self.btn_save_preset = QPushButton("💾 Salvar Modo")
+        self.btn_save_preset.setToolTip("Salvar a configuração atual com um nome personalizado para encontrar na lista.")
+        self.btn_save_preset.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.btn_save_preset.clicked.connect(self._save_custom_preset_dialog)
+        row1.addWidget(self.btn_save_preset)
 
-        # Custom Year Range Controls
-        self.widget_custom_years = QWidget()
-        custom_yr_layout = QHBoxLayout(self.widget_custom_years)
-        custom_yr_layout.setContentsMargins(2, 0, 2, 0)
-        custom_yr_layout.setSpacing(4)
-        
-        lbl_de = QLabel("De:")
-        lbl_de.setStyleSheet("font-weight: bold;")
-        custom_yr_layout.addWidget(lbl_de)
-        
-        self.spin_year_start = QSpinBox()
-        self.spin_year_start.setRange(2006, 2026)
-        self.spin_year_start.setValue(2020)
-        self.spin_year_start.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.spin_year_start.setFixedWidth(90)
-        custom_yr_layout.addWidget(self.spin_year_start)
-        
-        lbl_ate = QLabel("Até:")
-        lbl_ate.setStyleSheet("font-weight: bold;")
-        custom_yr_layout.addWidget(lbl_ate)
-        
-        self.spin_year_end = QSpinBox()
-        self.spin_year_end.setRange(2006, 2026)
-        self.spin_year_end.setValue(2026)
-        self.spin_year_end.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.spin_year_end.setFixedWidth(90)
-        custom_yr_layout.addWidget(self.spin_year_end)
-        
-        self.widget_custom_years.setVisible(False)
-        row1.addWidget(self.widget_custom_years)
+        self.btn_delete_preset = QPushButton("🗑️")
+        self.btn_delete_preset.setToolTip("Excluir o modo de configuração selecionado na lista.")
+        self.btn_delete_preset.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.btn_delete_preset.setFixedWidth(34)
+        self.btn_delete_preset.clicked.connect(self._delete_selected_preset)
+        row1.addWidget(self.btn_delete_preset)
 
-        # Sort Selection
-        self.combo_sort = QComboBox()
-        self.combo_sort.addItem("🔥 Mais Vistos (Padrão)", "view_count")
-        self.combo_sort.addItem("🎯 Relevância", "relevance")
-        self.combo_sort.addItem("📅 Mais Recentes", "upload_date")
-        self.combo_sort.setMinimumWidth(170)
-        self.combo_sort.setMaximumWidth(200)
-        row1.addWidget(self.combo_sort)
-
-        panel_layout.addLayout(row1)
-
-        # Row 2: Limits, Checkboxes, Action Buttons & Live Browser Shortcut
-        row2 = QHBoxLayout()
-        row2.setSpacing(8)
-
-        lbl_lim = QLabel("Limite por Termo/Canal:")
-        lbl_lim.setStyleSheet("font-weight: 600;")
-        row2.addWidget(lbl_lim)
-
-        self.spin_max = QSpinBox()
-        self.spin_max.setRange(5, 100000)
-        self.spin_max.setValue(50)
-        self.spin_max.setSingleStep(50)
-        self.spin_max.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.spin_max.setFixedWidth(100)
-        row2.addWidget(self.spin_max)
-
-        self.chk_unlimited = QCheckBox("♾️ Todos os Vídeos")
-        self.chk_unlimited.setToolTip("Busca todos os vídeos disponíveis do canal ou termo (até 100.000).")
-        self.chk_unlimited.toggled.connect(lambda checked: self.spin_max.setEnabled(not checked))
-        row2.addWidget(self.chk_unlimited)
-
-        # Minimum Views Filter (Clean QLineEdit, zero suffix, easy to edit/delete)
-        lbl_min_views = QLabel("Mín. Views:")
-        lbl_min_views.setStyleSheet("font-weight: 600;")
-        row2.addWidget(lbl_min_views)
-
-        self.input_min_views = QLineEdit()
-        self.input_min_views.setPlaceholderText("0 (Sem Mínimo)")
-        self.input_min_views.setValidator(QIntValidator(0, 100000000))
-        self.input_min_views.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.input_min_views.setFixedWidth(115)
-        self.input_min_views.setToolTip("Mínimo de visualizações do vídeo (ex: 5000). Vídeos com menos views serão ignorados.")
-        row2.addWidget(self.input_min_views)
-
-        self.chk_fast_mode = QCheckBox("⚡ Turbo")
-        self.chk_fast_mode.setChecked(True)
-        self.chk_fast_mode.setToolTip("Mineração ultra-rápida de vídeos (~0.4s por vídeo).")
-        row2.addWidget(self.chk_fast_mode)
-
-        self.chk_include_related = QCheckBox("🔗 Relacionados")
-        self.chk_include_related.setChecked(True)
-        self.chk_include_related.setToolTip("Aprende termos relacionados reais no YouTube (Suggest) e aplica filtro semântico estrito contra fuga de tema.")
-        row2.addWidget(self.chk_include_related)
-
-        self.chk_mode_24h = QCheckBox("🔄 24h")
-        self.chk_mode_24h.setToolTip("Executa em ciclos contínuos com pausas seguras anti-bloqueio.")
-        row2.addWidget(self.chk_mode_24h)
-
-        row2.addSpacing(10)
-
-        # 1. INICIAR BUTTON
-        self.btn_start = QPushButton("🚀 Iniciar Busca")
-        self.btn_start.setObjectName("btn_start_action")
-        self.btn_start.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        self.btn_start.clicked.connect(self._on_start_or_resume)
-        row2.addWidget(self.btn_start)
-
-        # 2. PAUSAR BUTTON
-        self.btn_pause = QPushButton("⏸️ Pausar")
-        self.btn_pause.setObjectName("btn_pause_action")
-        self.btn_pause.setEnabled(False)
-        self.btn_pause.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        self.btn_pause.clicked.connect(self._on_toggle_pause)
-        row2.addWidget(self.btn_pause)
-
-        # 3. PARAR BUTTON
-        self.btn_stop = QPushButton("⏹ Parar")
-        self.btn_stop.setObjectName("btn_stop_action")
-        self.btn_stop.setEnabled(False)
-        self.btn_stop.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        self.btn_stop.clicked.connect(self._on_stop_completely)
-        row2.addWidget(self.btn_stop)
-
-        # 4. VIEW IN BROWSER BUTTON
-        self.btn_view_live = QPushButton("🌐 Ver no Navegador")
-        self.btn_view_live.setObjectName("btn_table_action")
-        self.btn_view_live.setToolTip("Alternar para a aba do Navegador Web Integrado para assistir a análise ao vivo.")
-        self.btn_view_live.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        self.btn_view_live.clicked.connect(lambda: self.switch_to_browser_tab.emit())
-        row2.addWidget(self.btn_view_live)
-
-        row2.addSpacing(6)
-
-        # 5. BATCH TXT MULTI-INSTANCE BUTTON
-        self.btn_batch_txt = QPushButton("📂 Abrir Lista .TXT (Multi-Instâncias)")
+        # Multi-Instance Batch Launcher from .TXT
+        self.btn_batch_txt = QPushButton("📂 Abrir Lista .TXT")
         self.btn_batch_txt.setObjectName("btn_batch_action")
-        self.btn_batch_txt.setToolTip("Carregar arquivo de bloco de notas (.txt) com termos/canais por linha para abrir múltiplas instâncias e minerar automaticamente.")
+        self.btn_batch_txt.setToolTip("Carregar arquivo .txt com termos por linha para abrir múltiplas instâncias e minerar automaticamente.")
         self.btn_batch_txt.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.btn_batch_txt.setStyleSheet("""
             QPushButton#btn_batch_action {
@@ -673,26 +545,251 @@ class HunterTab(QWidget):
             }
         """)
         self.btn_batch_txt.clicked.connect(self._load_batch_txt_file)
-        row2.addWidget(self.btn_batch_txt)
+        row1.addWidget(self.btn_batch_txt)
 
-        # 6. SAVE DEFAULT PRESET BUTTON
-        self.btn_save_default = QPushButton("💾 Salvar Padrão")
-        self.btn_save_default.setToolTip("Salvar as opções atuais (idioma, datas, filtros, views mínimas) como padrão permanente.")
-        self.btn_save_default.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        self.btn_save_default.clicked.connect(self._save_current_as_default_profile)
-        row2.addWidget(self.btn_save_default)
+        panel_layout.addLayout(row1)
 
-        # 7. RESTORE DEFAULT PRESET BUTTON
-        self.btn_restore_default = QPushButton("🔄 Restaurar Padrão")
-        self.btn_restore_default.setToolTip("Restaurar as opções salvas como padrão.")
-        self.btn_restore_default.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        self.btn_restore_default.clicked.connect(lambda: self._restore_default_profile(silent=False))
-        row2.addWidget(self.btn_restore_default)
+        # ----------------------------------------------------
+        # LINHA 2: Filtros de Localização, Datas & Ordenação
+        # ----------------------------------------------------
+        row2 = QHBoxLayout()
+        row2.setSpacing(8)
+
+        lbl_lang = QLabel("🌍 Idioma / País:")
+        lbl_lang.setStyleSheet("font-weight: 600; color: #94A3B8;")
+        row2.addWidget(lbl_lang)
+
+        self.combo_lang = QComboBox()
+        for l in get_language_list():
+            self.combo_lang.addItem(l["label"], l["code"])
+        self.combo_lang.setMinimumWidth(160)
+        self.combo_lang.setMaximumWidth(200)
+        self.combo_lang.currentIndexChanged.connect(self._on_lang_changed)
+        row2.addWidget(self.combo_lang)
+
+        self.btn_exclude_countries = QPushButton("🚫 Excluir Países...")
+        self.btn_exclude_countries.setToolTip("Configurar países ou idiomas a serem excluídos das buscas globais.")
+        self.btn_exclude_countries.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.btn_exclude_countries.clicked.connect(self._open_country_exclusion_dialog)
+        row2.addWidget(self.btn_exclude_countries)
+
+        row2.addSpacing(6)
+
+        lbl_dt = QLabel("📅 Filtro de Datas:")
+        lbl_dt.setStyleSheet("font-weight: 600; color: #94A3B8;")
+        row2.addWidget(lbl_dt)
+
+        self.combo_date = QComboBox()
+        self.combo_date.addItem("🌐 Todas as Datas (Global)", "all_time")
+        self.combo_date.addItem("📅 Ano de 2026 (Atual)", "2026")
+        self.combo_date.addItem("📆 Ano de 2025", "2025")
+        self.combo_date.addItem("📆 Ano de 2024", "2024")
+        self.combo_date.addItem("📆 Ano de 2023", "2023")
+        self.combo_date.addItem("📆 Ano de 2022", "2022")
+        self.combo_date.addItem("📆 Ano de 2021", "2021")
+        self.combo_date.addItem("📆 Ano de 2020", "2020")
+        self.combo_date.addItem("🎯 Intervalo de Anos...", "custom_range")
+        self.combo_date.addItem("⏱️ Este Mês", "this_month")
+        self.combo_date.addItem("🗓️ Esta Semana", "this_week")
+        self.combo_date.addItem("🔥 Últimas 24 Horas", "today")
+        self.combo_date.setMinimumWidth(160)
+        self.combo_date.setMaximumWidth(190)
+        self.combo_date.currentIndexChanged.connect(self._on_date_filter_changed)
+        row2.addWidget(self.combo_date)
+
+        # Custom Year Range Controls
+        self.widget_custom_years = QWidget()
+        custom_yr_layout = QHBoxLayout(self.widget_custom_years)
+        custom_yr_layout.setContentsMargins(2, 0, 2, 0)
+        custom_yr_layout.setSpacing(4)
+        
+        lbl_de = QLabel("De:")
+        lbl_de.setStyleSheet("font-weight: bold;")
+        custom_yr_layout.addWidget(lbl_de)
+        
+        self.spin_year_start = QSpinBox()
+        self.spin_year_start.setRange(2006, 2026)
+        self.spin_year_start.setValue(2020)
+        self.spin_year_start.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.spin_year_start.setFixedWidth(80)
+        custom_yr_layout.addWidget(self.spin_year_start)
+        
+        lbl_ate = QLabel("Até:")
+        lbl_ate.setStyleSheet("font-weight: bold;")
+        custom_yr_layout.addWidget(lbl_ate)
+        
+        self.spin_year_end = QSpinBox()
+        self.spin_year_end.setRange(2006, 2026)
+        self.spin_year_end.setValue(2026)
+        self.spin_year_end.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.spin_year_end.setFixedWidth(80)
+        custom_yr_layout.addWidget(self.spin_year_end)
+        
+        self.widget_custom_years.setVisible(False)
+        row2.addWidget(self.widget_custom_years)
+
+        row2.addSpacing(6)
+
+        lbl_sort = QLabel("🔥 Ordenar:")
+        lbl_sort.setStyleSheet("font-weight: 600; color: #94A3B8;")
+        row2.addWidget(lbl_sort)
+
+        self.combo_sort = QComboBox()
+        self.combo_sort.addItem("🔥 Mais Vistos", "view_count")
+        self.combo_sort.addItem("🎯 Relevância", "relevance")
+        self.combo_sort.addItem("📅 Mais Recentes", "upload_date")
+        self.combo_sort.setMinimumWidth(130)
+        self.combo_sort.setMaximumWidth(155)
+        row2.addWidget(self.combo_sort)
 
         row2.addStretch()
         panel_layout.addLayout(row2)
 
+        # ----------------------------------------------------
+        # LINHA 3: Critérios de Filtragem & Botões de Ação
+        # ----------------------------------------------------
+        row3 = QHBoxLayout()
+        row3.setSpacing(8)
+
+        lbl_lim = QLabel("Limite:")
+        lbl_lim.setStyleSheet("font-weight: 600; color: #94A3B8;")
+        row3.addWidget(lbl_lim)
+
+        self.spin_max = QSpinBox()
+        self.spin_max.setRange(5, 100000)
+        self.spin_max.setValue(50)
+        self.spin_max.setSingleStep(50)
+        self.spin_max.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.spin_max.setFixedWidth(85)
+        row3.addWidget(self.spin_max)
+
+        self.chk_unlimited = QCheckBox("♾️ Todos os Vídeos")
+        self.chk_unlimited.setToolTip("Busca todos os vídeos disponíveis do canal ou termo (até 100.000).")
+        self.chk_unlimited.toggled.connect(lambda checked: self.spin_max.setEnabled(not checked))
+        row3.addWidget(self.chk_unlimited)
+
+        row3.addSpacing(6)
+
+        lbl_min_views = QLabel("Mín. Views:")
+        lbl_min_views.setStyleSheet("font-weight: 600; color: #94A3B8;")
+        row3.addWidget(lbl_min_views)
+
+        self.input_min_views = QLineEdit()
+        self.input_min_views.setPlaceholderText("0 (Sem Mínimo)")
+        self.input_min_views.setValidator(QIntValidator(0, 100000000))
+        self.input_min_views.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.input_min_views.setFixedWidth(110)
+        self.input_min_views.setToolTip("Mínimo de visualizações do vídeo (ex: 50000).")
+        row3.addWidget(self.input_min_views)
+
+        row3.addSpacing(6)
+
+        self.chk_fast_mode = QCheckBox("⚡ Turbo")
+        self.chk_fast_mode.setChecked(True)
+        self.chk_fast_mode.setToolTip("Mineração ultra-rápida de vídeos (~0.4s por vídeo).")
+        row3.addWidget(self.chk_fast_mode)
+
+        self.chk_include_related = QCheckBox("🔗 Relacionados")
+        self.chk_include_related.setChecked(True)
+        self.chk_include_related.setToolTip("Aprende termos relacionados reais no YouTube e aplica filtro semântico estrito.")
+        row3.addWidget(self.chk_include_related)
+
+        self.chk_mode_24h = QCheckBox("🔄 24h")
+        self.chk_mode_24h.setToolTip("Executa em ciclos contínuos com pausas seguras anti-bloqueio.")
+        row3.addWidget(self.chk_mode_24h)
+
+        row3.addStretch()
+
+        # Action Buttons
+        self.btn_start = QPushButton("🚀 Iniciar Busca")
+        self.btn_start.setObjectName("btn_start_action")
+        self.btn_start.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.btn_start.clicked.connect(self._on_start_or_resume)
+        row3.addWidget(self.btn_start)
+
+        self.btn_pause = QPushButton("⏸️ Pausar")
+        self.btn_pause.setObjectName("btn_pause_action")
+        self.btn_pause.setEnabled(False)
+        self.btn_pause.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.btn_pause.clicked.connect(self._on_toggle_pause)
+        row3.addWidget(self.btn_pause)
+
+        self.btn_stop = QPushButton("⏹ Parar")
+        self.btn_stop.setObjectName("btn_stop_action")
+        self.btn_stop.setEnabled(False)
+        self.btn_stop.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.btn_stop.clicked.connect(self._on_stop_completely)
+        row3.addWidget(self.btn_stop)
+
+        self.btn_view_live = QPushButton("🌐 Navegador")
+        self.btn_view_live.setObjectName("btn_table_action")
+        self.btn_view_live.setToolTip("Alternar para o Navegador Web Integrado.")
+        self.btn_view_live.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.btn_view_live.clicked.connect(lambda: self.switch_to_browser_tab.emit())
+        row3.addWidget(self.btn_view_live)
+
+        panel_layout.addLayout(row3)
         return panel
+
+    def _reload_presets_combo(self, selected_name: Optional[str] = None):
+        """Populate the combo_presets with all available named modes."""
+        self.combo_presets.blockSignals(True)
+        self.combo_presets.clear()
+        self.named_profiles = get_named_profiles()
+        for name in self.named_profiles.keys():
+            self.combo_presets.addItem(f"📋 {name}", name)
+        
+        if selected_name and selected_name in self.named_profiles:
+            idx = self.combo_presets.findData(selected_name)
+            if idx >= 0:
+                self.combo_presets.setCurrentIndex(idx)
+        self.combo_presets.blockSignals(False)
+
+    def _on_preset_selected(self):
+        preset_name = self.combo_presets.currentData()
+        if preset_name and preset_name in self.named_profiles:
+            prof = self.named_profiles[preset_name]
+            self._apply_profile_to_ui(prof)
+            self._append_log(f"📁 Modo '{preset_name}' carregado.")
+
+    def _save_custom_preset_dialog(self):
+        from PyQt6.QtWidgets import QInputDialog
+        current_name = self.combo_presets.currentData() or "Meu Modo"
+        default_name = current_name.replace("📋 ", "").replace("⭐ ", "")
+        name, ok = QInputDialog.getText(
+            self,
+            "Salvar Modo de Configuração",
+            "Digite um nome para este modo de configuração (ex: Filtro 100k Brasil, Global 2026):",
+            QLineEdit.EchoMode.Normal,
+            default_name
+        )
+        if ok and name.strip():
+            clean = name.strip()
+            prof = self._get_current_profile_from_ui()
+            if save_named_profile(clean, prof):
+                # Also set as active default profile
+                save_default_profile(prof)
+                self._reload_presets_combo(selected_name=clean)
+                QMessageBox.information(self, "Modo Salvo", f"✅ O modo '{clean}' foi salvo na lista com sucesso!\n\nVocê pode selecioná-lo a qualquer momento no menu 'Modo Salvo'.")
+
+    def _delete_selected_preset(self):
+        preset_name = self.combo_presets.currentData()
+        if not preset_name or preset_name == "⭐ Modo Padrão":
+            QMessageBox.warning(self, "Aviso", "O modo padrão do sistema não pode ser excluído.")
+            return
+
+        reply = QMessageBox.question(
+            self,
+            "Excluir Modo",
+            f"Deseja realmente excluir o modo '{preset_name}' da lista?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            if delete_named_profile(preset_name):
+                self._reload_presets_combo(selected_name="⭐ Modo Padrão")
+                self._restore_default_profile(silent=True)
+                self._append_log(f"🗑️ Modo '{preset_name}' excluído.")
 
     def _apply_profile_to_ui(self, profile: Dict[str, Any]):
         """Apply a saved configuration dictionary to the UI elements cleanly."""
@@ -765,16 +862,6 @@ class HunterTab(QWidget):
             "include_related": self.chk_include_related.isChecked(),
             "loop_24h": self.chk_mode_24h.isChecked()
         }
-
-    def _save_current_as_default_profile(self):
-        prof = self._get_current_profile_from_ui()
-        if save_default_profile(prof):
-            QMessageBox.information(
-                self,
-                "Configuração Padrão Salva",
-                "✅ Suas configurações foram salvas como padrão com sucesso!\n\n"
-                "Elas serão carregadas automaticamente em todas as novas instâncias e ao abrir o programa."
-            )
 
     def _restore_default_profile(self, silent: bool = False):
         prof = load_default_profile()
