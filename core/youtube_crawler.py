@@ -520,7 +520,6 @@ class YouTubeCrawler:
 
             description = deep_info.get("description", "")
             pinned_comment = deep_info.get("pinned_comment", "")
-            top_comments = deep_info.get("top_comments", [])
 
             metrics = calculate_video_metrics(
                 view_count=view_count,
@@ -530,12 +529,11 @@ class YouTubeCrawler:
                 video_id=v_item.get("id")
             )
 
+            # Extract domains strictly from Pinned Comment and Description
             pinned_domains = self.extractor.process_text_for_domains(pinned_comment, source_location="📌 Comentário Fixado") if pinned_comment else []
             desc_domains = self.extractor.process_text_for_domains(description, source_location="📄 Descrição")
-            comments_text = " ".join(top_comments)
-            other_comment_domains = self.extractor.process_text_for_domains(comments_text, source_location="💬 Comentários")
 
-            combined_extracted_domains = pinned_domains + desc_domains + other_comment_domains
+            combined_extracted_domains = pinned_domains + desc_domains
 
             validated_domains_for_video = []
             for d in combined_extracted_domains:
@@ -612,6 +610,7 @@ class YouTubeCrawler:
         custom_year: Optional[int] = None,
         year_range: Optional[tuple] = None,
         include_related: bool = True,
+        excluded_langs: Optional[List[str]] = None,
         hl: str = "pt",
         gl: str = "BR",
         display_label: str = "",
@@ -650,6 +649,8 @@ class YouTubeCrawler:
             except Exception as e:
                 logger.debug(f"Error fetching related suggestions for '{keyword}': {e}")
 
+        # 2. Build multi-language query expansion
+        sub_tasks = expand_queries_for_language(keyword, target_lang, excluded_langs=excluded_langs)
         # 2. Build Semantic Topic Profile for strict relevance gating
         topic_profile = build_topic_profile(keyword, related_terms=related_suggestions)
 
@@ -721,20 +722,30 @@ class YouTubeCrawler:
                 initial_videos.extend(rel_vids)
                 if not initial_videos and not related_suggestions_queue:
                     break
-                continue
+            for c in candidates:
+                u = c.get("url")
+                if u and u not in seen_urls:
+                    seen_urls.add(u)
+                    collected_video_candidates.append(c)
 
-            if not initial_videos:
+            if len(collected_video_candidates) >= max_videos * 2 and max_videos < 50000:
                 break
 
-            v_item = initial_videos.pop(0)
+        total_candidates = len(collected_video_candidates)
+        if on_progress:
+            on_progress(0, max_videos, f"{target_info}Encontrados {total_candidates} vídeos candidatos. Iniciando mineração...")
+
+        # 4. Deep Scrape & Validate Candidates
+        for idx, v_item in enumerate(collected_video_candidates):
+            if self._is_stopped or len(scanned_videos) >= max_videos:
+                break
+
             vid_id = v_item.get("id")
             if not vid_id or vid_id in self.seen_video_ids:
                 continue
             self.seen_video_ids.add(vid_id)
 
-            processed_index += 1
-
-            # Minimum Views Pre-filter (Discards early before performing network requests)
+            # Minimum views pre-filter
             if min_views > 0:
                 init_views = v_item.get("initial_view_count")
                 if init_views is not None and init_views < min_views:
@@ -776,17 +787,15 @@ class YouTubeCrawler:
 
             description = deep_info.get("description", "")
             pinned_comment = deep_info.get("pinned_comment", "")
-            top_comments = deep_info.get("top_comments", [])
 
             # High-Precision Multi-Layer Language Verification
             if target_lang and target_lang not in ("global", "auto", "en"):
-                comments_text_sample = " ".join(top_comments[:3])
                 if not is_content_matching_language(
                     title=title,
                     description=description,
                     channel_name=channel,
                     target_lang=target_lang,
-                    comments_sample=comments_text_sample
+                    comments_sample=""
                 ):
                     # Video is in foreign language (e.g. Spanish, English), strictly skip
                     continue
@@ -819,13 +828,11 @@ class YouTubeCrawler:
                     logger.debug(f"Skipped video outside year range {start_yr}-{end_yr} (upload_year={v_year}): {title}")
                     continue
 
-            # Extract domains and Instagrams from Pinned Comment, Description, and other Comments
+            # Extract domains strictly from Pinned Comment and Description
             pinned_domains = self.extractor.process_text_for_domains(pinned_comment, source_location="📌 Comentário Fixado") if pinned_comment else []
             desc_domains = self.extractor.process_text_for_domains(description, source_location="📄 Descrição")
-            comments_text = " ".join(top_comments)
-            other_comment_domains = self.extractor.process_text_for_domains(comments_text, source_location="💬 Comentários")
 
-            combined_extracted_domains = pinned_domains + desc_domains + other_comment_domains
+            combined_extracted_domains = pinned_domains + desc_domains
 
             # Validate each domain or Instagram account
             validated_domains_for_video = []

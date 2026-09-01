@@ -82,17 +82,28 @@ class TestYoutubeEspiaoCore(unittest.TestCase):
         self.assertNotIn("youtube.com", extracted_roots)
 
     def test_translator_multi_languages(self):
-        """Test multi-language expansion for global and specific languages."""
-        # 1. Global expansion creates tasks for all 12 supported languages
+        """Test multi-language expansion for global, exclusions, and specific languages."""
+        # 1. Global expansion creates tasks for all 18 supported languages
         tasks = expand_queries_for_language("curso de marketing", "global")
-        self.assertEqual(len(tasks), 12)
+        self.assertEqual(len(tasks), 18)
         lang_codes = [t["lang_code"] for t in tasks]
         self.assertIn("ru", lang_codes) # Russian
         self.assertIn("ja", lang_codes) # Japanese
         self.assertIn("zh", lang_codes) # Chinese
         self.assertIn("ar", lang_codes) # Arabic
+        self.assertIn("tr", lang_codes) # Turkish
+        self.assertIn("pl", lang_codes) # Polish
 
-        # 2. Universal acronym preservation with localized token targeting
+        # 2. Global expansion with excluded languages
+        tasks_excluded = expand_queries_for_language("curso de marketing", "global", excluded_langs=["ru", "zh", "hi", "ar"])
+        self.assertEqual(len(tasks_excluded), 14)
+        lang_codes_ex = [t["lang_code"] for t in tasks_excluded]
+        self.assertNotIn("ru", lang_codes_ex)
+        self.assertNotIn("zh", lang_codes_ex)
+        self.assertNotIn("hi", lang_codes_ex)
+        self.assertNotIn("ar", lang_codes_ex)
+
+        # 3. Universal acronym preservation with localized token targeting
         gta_task = expand_queries_for_language("GTA", "pt")
         gta_queries = [t["query"] for t in gta_task]
         self.assertIn("GTA brasil", gta_queries)
@@ -101,7 +112,7 @@ class TestYoutubeEspiaoCore(unittest.TestCase):
         gta_global = expand_queries_for_language("GTA", "global")
         self.assertTrue(all(t["query"] == "GTA" for t in gta_global))
 
-        # 3. Long-tail mixed keyword in Portuguese
+        # 4. Long-tail mixed keyword in Portuguese
         long_tail = expand_queries_for_language("GTA 6 gameplay brasil novidades", "pt")
         self.assertEqual(long_tail[0]["query"], "GTA 6 gameplay brasil novidades")
 

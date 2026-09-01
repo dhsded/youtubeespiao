@@ -119,24 +119,23 @@ class InstanceManager:
 
     @classmethod
     def _is_pid_running(cls, pid: int) -> bool:
-        """Check if a process with the given PID is currently active and is YouTube Espião / Python."""
+        """Check if a process with the given PID is currently active."""
         if pid <= 0:
             return False
         if sys.platform == "win32":
             import ctypes
-            import ctypes.wintypes
             PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
-            handle = ctypes.windll.kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+            SYNCHRONIZE = 0x00100000
+            handle = ctypes.windll.kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, False, pid)
             if not handle:
                 return False
             try:
-                buf = ctypes.create_unicode_buffer(1024)
-                size = ctypes.wintypes.DWORD(1024)
-                if ctypes.windll.kernel32.QueryFullProcessImageNameW(handle, 0, buf, ctypes.byref(size)):
-                    exe_name = buf.value.lower()
-                    if "youtube espiao" in exe_name or "python" in exe_name:
-                        return True
-                return False
+                exit_code = ctypes.c_ulong()
+                if ctypes.windll.kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
+                    STILL_ACTIVE = 259
+                    if exit_code.value != STILL_ACTIVE:
+                        return False
+                return True
             except Exception:
                 return False
             finally:
@@ -157,10 +156,12 @@ class InstanceManager:
         inst_dir = cls.get_instances_dir()
         current_pid = os.getpid()
 
-        # 1. Clean up stale lock files from terminated or non-existent processes
+        # Find the first available or stale slot starting strictly from 1
         for i in range(1, 100):
             lock_path = os.path.join(inst_dir, f"instance_{i}.pid")
+            
             if os.path.exists(lock_path):
+                is_stale = True
                 try:
                     with open(lock_path, "r", encoding="utf-8") as f:
                         content = f.read().strip()
@@ -170,30 +171,31 @@ class InstanceManager:
                                 cls._instance_number = i
                                 cls._lock_file = lock_path
                                 return i
-                            if not cls._is_pid_running(pid):
-                                try:
-                                    os.remove(lock_path)
-                                except Exception:
-                                    pass
+                            if cls._is_pid_running(pid):
+                                is_stale = False
                 except Exception:
-                    try:
-                        os.remove(lock_path)
-                    except Exception:
-                        pass
+                    is_stale = True
 
-        # 2. Claim lowest available slot starting strictly from 1
-        for i in range(1, 100):
-            lock_path = os.path.join(inst_dir, f"instance_{i}.pid")
-            if not os.path.exists(lock_path):
-                try:
-                    with open(lock_path, "w", encoding="utf-8") as f:
-                        f.write(str(current_pid))
-                    cls._instance_number = i
-                    cls._lock_file = lock_path
-                    atexit.register(cls.release_instance)
-                    return i
-                except Exception:
+                if not is_stale:
+                    # Slot i is actively used by a running process, proceed to next slot
                     continue
+
+                # Stale file: try to remove
+                try:
+                    os.remove(lock_path)
+                except Exception:
+                    pass
+
+            # Try to claim slot i
+            try:
+                with open(lock_path, "w", encoding="utf-8") as f:
+                    f.write(str(current_pid))
+                cls._instance_number = i
+                cls._lock_file = lock_path
+                atexit.register(cls.release_instance)
+                return i
+            except Exception:
+                continue
 
         cls._instance_number = 1
         return 1

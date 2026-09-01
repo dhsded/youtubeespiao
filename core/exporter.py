@@ -263,16 +263,15 @@ class DataExporter:
             <table class="data-table">
                 <thead>
                     <tr>
-                        <th style="width: 8%;">Status</th>
+                        <th style="width: 7%;">Status</th>
                         <th style="width: 6%;">Tipo</th>
-                        <th style="width: 15%;">Domínio / Conta</th>
-                        <th style="width: 7%;">Vídeos</th>
-                        <th style="width: 10%;">Soma Tráfego/Dia</th>
-                        <th style="width: 10%;">Views 90 Dias</th>
-                        <th style="width: 9%;">Views Totais</th>
-                        <th style="width: 19%;">Vídeo Principal (Link YouTube)</th>
-                        <th style="width: 7%;">Data Envio</th>
-                        <th style="width: 9%;">Ação Compra</th>
+                        <th style="width: 14%;">Domínio / Conta</th>
+                        <th style="width: 6%;">Vídeos</th>
+                        <th style="width: 9%;">Tráfego/Dia</th>
+                        <th style="width: 9%;">Views 90d</th>
+                        <th style="width: 8%;">Total Views</th>
+                        <th style="width: 23%;">Vídeo de Origem (Link Clicável)</th>
+                        <th style="width: 18%;">Link de Compra / Claim (Clicável)</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -280,7 +279,7 @@ class DataExporter:
 
         # Populate available domains table with clickable links and formatted data
         if not avail_doms:
-            html += "<tr><td colspan='10' style='text-align:center; color:#64748B;'>Nenhuma oportunidade disponível encontrada na varredura.</td></tr>"
+            html += "<tr><td colspan='9' style='text-align:center; color:#64748B;'>Nenhuma oportunidade disponível encontrada na varredura.</td></tr>"
         else:
             for d in avail_doms:
                 is_ig = d.get("is_instagram", False)
@@ -308,15 +307,15 @@ class DataExporter:
                 reg_name = d.get("registrar_name", "Registrar")
 
                 if v_url:
-                    video_link_html = f"<a class='watch-btn' href='{v_url}'>{v_title[:40]}... ↗</a><br><span class='small-gray'>Canal: {channel}</span>"
+                    video_link_html = f"<b>{v_title[:38]}...</b><br><span class='small-gray'>Canal: {channel} | {pub_date}</span><br><a class='watch-btn' href='{v_url}'>{v_url}</a>"
                 else:
-                    video_link_html = f"<b>{v_title[:40]}</b><br><span class='small-gray'>Canal: {channel}</span>"
+                    video_link_html = f"<b>{v_title[:38]}</b><br><span class='small-gray'>Canal: {channel}</span>"
 
                 if buy_link:
-                    action_html = f"<a class='buy-btn' href='{buy_link}'>🛒 Comprar ({reg_name}) ↗</a>"
+                    action_html = f"<span class='small-gray'>({reg_name})</span><br><a class='buy-btn' href='{buy_link}'>{buy_link}</a>"
                 elif is_ig:
-                    ig_claim_url = f"https://www.instagram.com/{name.replace('@', '')}"
-                    action_html = f"<a class='buy-btn' href='{ig_claim_url}'>📸 Reivindicar IG ↗</a>"
+                    ig_claim_url = f"https://www.instagram.com/{name.replace('@', '').replace('📸 ', '')}"
+                    action_html = f"<span class='small-gray'>(Instagram)</span><br><a class='buy-btn' href='{ig_claim_url}'>{ig_claim_url}</a>"
                 else:
                     action_html = "<span class='small-gray'>Disponível</span>"
 
@@ -330,7 +329,6 @@ class DataExporter:
                         <td style="color:#8B5CF6; font-weight:700;">{views_90d_formatted}</td>
                         <td style="color:#0284C7; font-weight:700;">{tot_views_formatted}</td>
                         <td>{video_link_html}</td>
-                        <td>{pub_date}</td>
                         <td>{action_html}</td>
                     </tr>
                 """
@@ -343,14 +341,14 @@ class DataExporter:
             <table class="data-table">
                 <thead>
                     <tr>
-                        <th style="width: 30%;">Título do Vídeo (Clique para Assistir)</th>
+                        <th style="width: 38%;">Título do Vídeo & Link do YouTube (Clicável)</th>
                         <th style="width: 14%;">Canal</th>
                         <th style="width: 9%;">Total Views</th>
-                        <th style="width: 10%;">Views 90 Dias</th>
-                        <th style="width: 9%;">Views / Hora</th>
-                        <th style="width: 9%;">Views / Dia</th>
-                        <th style="width: 8%;">Data Envio</th>
-                        <th style="width: 11%;">Domínios Livres</th>
+                        <th style="width: 9%;">Views 90 Dias</th>
+                        <th style="width: 8%;">Views / Hora</th>
+                        <th style="width: 8%;">Views / Dia</th>
+                        <th style="width: 6%;">Data Envio</th>
+                        <th style="width: 8%;">Domínios Livres</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -369,9 +367,9 @@ class DataExporter:
                 v_title = v.get("title", "")
 
                 if v_url:
-                    title_cell = f"<a class='watch-btn' href='{v_url}'>{v_title[:50]} ↗</a>"
+                    title_cell = f"<b>{v_title[:45]}</b><br><a class='watch-btn' href='{v_url}'>{v_url}</a>"
                 else:
-                    title_cell = f"<b>{v_title[:50]}</b>"
+                    title_cell = f"<b>{v_title[:45]}</b>"
 
                 html += f"""
                     <tr>

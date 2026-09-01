@@ -142,12 +142,12 @@ ES_EXCLUSIVE_WORDS = {
 
 AVAILABLE_LANGUAGES: Dict[str, Dict[str, str]] = {
     "global": {
-        "name": "Global (Todos os Idiomas)",
+        "name": "Global (Todos os Países)",
         "code": "global",
         "country": "US",
         "hl": "en",
         "gl": "US",
-        "flag": "🌍"
+        "flag": "🌐"
     },
     "pt": {
         "name": "Português (Brasil)",
@@ -157,37 +157,77 @@ AVAILABLE_LANGUAGES: Dict[str, Dict[str, str]] = {
         "gl": "BR",
         "flag": "🇧🇷"
     },
+    "pt-pt": {
+        "name": "Português (Portugal)",
+        "code": "pt-pt",
+        "country": "PT",
+        "hl": "pt-PT",
+        "gl": "PT",
+        "flag": "🇵🇹"
+    },
     "en": {
-        "name": "Inglês (Global / EUA)",
+        "name": "Inglês (Estados Unidos)",
         "code": "en",
         "country": "US",
         "hl": "en",
         "gl": "US",
         "flag": "🇺🇸"
     },
+    "en-gb": {
+        "name": "Inglês (Reino Unido)",
+        "code": "en-gb",
+        "country": "GB",
+        "hl": "en-GB",
+        "gl": "GB",
+        "flag": "🇬🇧"
+    },
+    "en-ca": {
+        "name": "Inglês (Canadá)",
+        "code": "en-ca",
+        "country": "CA",
+        "hl": "en-CA",
+        "gl": "CA",
+        "flag": "🇨🇦"
+    },
+    "en-au": {
+        "name": "Inglês (Austrália)",
+        "code": "en-au",
+        "country": "AU",
+        "hl": "en-AU",
+        "gl": "AU",
+        "flag": "🇦🇺"
+    },
     "es": {
-        "name": "Espanhol (Espanha / LatAm)",
+        "name": "Espanhol (Espanha)",
         "code": "es",
         "country": "ES",
         "hl": "es",
         "gl": "ES",
         "flag": "🇪🇸"
     },
-    "ru": {
-        "name": "Russo (Rússia)",
-        "code": "ru",
-        "country": "RU",
-        "hl": "ru",
-        "gl": "RU",
-        "flag": "🇷🇺"
+    "es-mx": {
+        "name": "Espanhol (México)",
+        "code": "es-mx",
+        "country": "MX",
+        "hl": "es-419",
+        "gl": "MX",
+        "flag": "🇲🇽"
     },
-    "ja": {
-        "name": "Japonês (Japão)",
-        "code": "ja",
-        "country": "JP",
-        "hl": "ja",
-        "gl": "JP",
-        "flag": "🇯🇵"
+    "es-ar": {
+        "name": "Espanhol (Argentina)",
+        "code": "es-ar",
+        "country": "AR",
+        "hl": "es-419",
+        "gl": "AR",
+        "flag": "🇦🇷"
+    },
+    "es-co": {
+        "name": "Espanhol (Colômbia)",
+        "code": "es-co",
+        "country": "CO",
+        "hl": "es-419",
+        "gl": "CO",
+        "flag": "🇨🇴"
     },
     "de": {
         "name": "Alemão (Alemanha)",
@@ -213,13 +253,13 @@ AVAILABLE_LANGUAGES: Dict[str, Dict[str, str]] = {
         "gl": "IT",
         "flag": "🇮🇹"
     },
-    "zh": {
-        "name": "Chinês (Mandarim)",
-        "code": "zh",
-        "country": "CN",
-        "hl": "zh-CN",
-        "gl": "CN",
-        "flag": "🇨🇳"
+    "ja": {
+        "name": "Japonês (Japão)",
+        "code": "ja",
+        "country": "JP",
+        "hl": "ja",
+        "gl": "JP",
+        "flag": "🇯🇵"
     },
     "ko": {
         "name": "Coreano (Coreia do Sul)",
@@ -229,13 +269,21 @@ AVAILABLE_LANGUAGES: Dict[str, Dict[str, str]] = {
         "gl": "KR",
         "flag": "🇰🇷"
     },
-    "ar": {
-        "name": "Árabe (Oriente Médio)",
-        "code": "ar",
-        "country": "SA",
-        "hl": "ar",
-        "gl": "SA",
-        "flag": "🇸🇦"
+    "zh": {
+        "name": "Chinês (Mandarim)",
+        "code": "zh",
+        "country": "CN",
+        "hl": "zh-CN",
+        "gl": "CN",
+        "flag": "🇨🇳"
+    },
+    "ru": {
+        "name": "Russo (Rússia)",
+        "code": "ru",
+        "country": "RU",
+        "hl": "ru",
+        "gl": "RU",
+        "flag": "🇷🇺"
     },
     "hi": {
         "name": "Hindi (Índia)",
@@ -244,10 +292,69 @@ AVAILABLE_LANGUAGES: Dict[str, Dict[str, str]] = {
         "hl": "hi",
         "gl": "IN",
         "flag": "🇮🇳"
+    },
+    "tr": {
+        "name": "Turco (Turquia)",
+        "code": "tr",
+        "country": "TR",
+        "hl": "tr",
+        "gl": "TR",
+        "flag": "🇹🇷"
+    },
+    "ar": {
+        "name": "Árabe (Arábia Saudita)",
+        "code": "ar",
+        "country": "SA",
+        "hl": "ar",
+        "gl": "SA",
+        "flag": "🇸🇦"
+    },
+    "nl": {
+        "name": "Holandês (Holanda)",
+        "code": "nl",
+        "country": "NL",
+        "hl": "nl",
+        "gl": "NL",
+        "flag": "🇳🇱"
+    },
+    "pl": {
+        "name": "Polonês (Polônia)",
+        "code": "pl",
+        "country": "PL",
+        "hl": "pl",
+        "gl": "PL",
+        "flag": "🇵🇱"
+    },
+    "sv": {
+        "name": "Sueco (Suécia)",
+        "code": "sv",
+        "country": "SE",
+        "hl": "sv",
+        "gl": "SE",
+        "flag": "🇸🇪"
+    },
+    "id": {
+        "name": "Indonésio (Indonésia)",
+        "code": "id",
+        "country": "ID",
+        "hl": "id",
+        "gl": "ID",
+        "flag": "🇮🇩"
+    },
+    "vi": {
+        "name": "Vietnamita (Vietnã)",
+        "code": "vi",
+        "country": "VN",
+        "hl": "vi",
+        "gl": "VN",
+        "flag": "🇻🇳"
     }
 }
 
-GLOBAL_EXPANSION_LANGS = ["pt", "en", "es", "ru", "ja", "de", "fr", "it", "zh", "ko", "ar", "hi"]
+GLOBAL_EXPANSION_LANGS = [
+    "pt", "en", "es", "de", "fr", "it", "ja", "ko", "zh", "ru",
+    "hi", "tr", "ar", "nl", "pl", "sv", "id", "vi"
+]
 
 def is_universal_acronym(text: str) -> bool:
     """Check if the text is a universal acronym, game title, or proper noun."""
@@ -278,14 +385,18 @@ def translate_query(text: str, target_lang: str) -> str:
     If target_lang is 'pt' (or identical), returns original text.
     """
     text = text.strip()
-    if not text or target_lang in ("global", "auto", "pt"):
+    if not text or target_lang in ("global", "auto", "pt", "pt-pt"):
         return text
 
     if is_universal_acronym(text):
         return text
 
     lang_code = target_lang
-    if target_lang == "zh":
+    if target_lang.startswith("en"):
+        lang_code = "en"
+    elif target_lang.startswith("es"):
+        lang_code = "es"
+    elif target_lang == "zh":
         lang_code = "zh-CN"
 
     url = f"https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl={lang_code}&dt=t&q={urllib.parse.quote(text)}"
@@ -306,17 +417,21 @@ def translate_query(text: str, target_lang: str) -> str:
 
     return text
 
-def expand_queries_for_language(keyword: str, language_code: str) -> List[Dict[str, str]]:
+def expand_queries_for_language(keyword: str, language_code: str, excluded_langs: Optional[List[str]] = None) -> List[Dict[str, str]]:
     """
-    Generate localized search queries with country tokens.
+    Generate localized search queries with country tokens and exclude unwanted regions.
     """
     keyword = keyword.strip()
     if not keyword:
         return []
 
+    excluded_set = set((excluded_langs or []))
+
     if language_code == "global":
         tasks = []
         for l_code in GLOBAL_EXPANSION_LANGS:
+            if l_code in excluded_set or (l_code.split("-")[0] in excluded_set):
+                continue
             info = AVAILABLE_LANGUAGES.get(l_code, {})
             translated = keyword if is_universal_acronym(keyword) else translate_query(keyword, l_code)
             tasks.append({

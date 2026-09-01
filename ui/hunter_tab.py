@@ -21,18 +21,83 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel,
     QLineEdit, QPushButton, QComboBox, QSpinBox, QProgressBar,
     QTabWidget, QPlainTextEdit, QFrame, QFileDialog, QMessageBox,
-    QCheckBox
+    QCheckBox, QDialog, QListWidget, QListWidgetItem, QDialogButtonBox
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer
-from PyQt6.QtGui import QFont, QCursor
+from PyQt6.QtGui import QFont, QCursor, QIntValidator
 
 from core.youtube_crawler import YouTubeCrawler
-from core.translator import get_language_list, expand_queries_for_language
+from core.translator import get_language_list, expand_queries_for_language, AVAILABLE_LANGUAGES
 from core.metrics_calculator import format_number
 from core.exporter import DataExporter
 from core.autosave_manager import AutoSaveManager
 from ui.video_table_model import VideoTableView, DomainTableView
 from ui.settings_tab import APP_SETTINGS
+
+class CountryExclusionDialog(QDialog):
+    """Dialog allowing user to select countries/languages to exclude from Global searches."""
+    def __init__(self, excluded_codes: List[str], parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("🚫 Excluir Países / Idiomas da Busca Global")
+        self.setMinimumSize(440, 520)
+        self.excluded_codes = set(excluded_codes)
+
+        layout = QVBoxLayout(self)
+        layout.setSpacing(10)
+
+        info_lbl = QLabel(
+            "Selecione os países/idiomas que deseja <b>EXCLUIR</b> dos resultados globais.<br>"
+            "<span style='color: #64748B;'>Os países marcados com ☑ NÃO serão minerados quando o idioma for 'Global'.</span>"
+        )
+        info_lbl.setWordWrap(True)
+        layout.addWidget(info_lbl)
+
+        # Quick action buttons
+        btn_box_top = QHBoxLayout()
+        btn_select_none = QPushButton("Desmarcar Todos")
+        btn_select_none.clicked.connect(self._clear_all)
+        btn_box_top.addWidget(btn_select_none)
+
+        btn_common_exclude = QPushButton("Excluir Raros (IN/RU/AR/CN/TR/ID/VI)")
+        btn_common_exclude.clicked.connect(self._exclude_rare)
+        btn_box_top.addWidget(btn_common_exclude)
+        layout.addLayout(btn_box_top)
+
+        self.list_widget = QListWidget()
+        self.items_map = {}
+        for code, data in AVAILABLE_LANGUAGES.items():
+            if code == "global":
+                continue
+            item = QListWidgetItem(f"{data.get('flag', '')} {data.get('name', code)} ({code.upper()})")
+            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+            checked = Qt.CheckState.Checked if (code in self.excluded_codes or code.split("-")[0] in self.excluded_codes) else Qt.CheckState.Unchecked
+            item.setCheckState(checked)
+            self.list_widget.addItem(item)
+            self.items_map[code] = item
+
+        layout.addWidget(self.list_widget)
+
+        btn_dialog = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        btn_dialog.accepted.connect(self.accept)
+        btn_dialog.rejected.connect(self.reject)
+        layout.addWidget(btn_dialog)
+
+    def _clear_all(self):
+        for item in self.items_map.values():
+            item.setCheckState(Qt.CheckState.Unchecked)
+
+    def _exclude_rare(self):
+        rare = {"hi", "ru", "ar", "zh", "tr", "id", "vi", "ko", "ja"}
+        for code, item in self.items_map.items():
+            if code in rare:
+                item.setCheckState(Qt.CheckState.Checked)
+
+    def get_excluded_codes(self) -> List[str]:
+        result = []
+        for code, item in self.items_map.items():
+            if item.checkState() == Qt.CheckState.Checked:
+                result.append(code)
+        return result
 
 class CrawlerThread(QThread):
     """Background worker thread supporting Keywords, Channel Harvester, Live Browser Signals & Telemetry."""
@@ -56,6 +121,7 @@ class CrawlerThread(QThread):
         sort_by: str = "view_count",
         fast_mode: bool = True,
         include_related: bool = True,
+        excluded_langs: Optional[List[str]] = None,
         loop_24h: bool = False,
         parent=None
     ):
@@ -70,6 +136,7 @@ class CrawlerThread(QThread):
         self.sort_by = sort_by
         self.fast_mode = fast_mode
         self.include_related = include_related
+        self.excluded_langs = excluded_langs or []
         self.loop_24h = loop_24h
         self.crawler = YouTubeCrawler(
             proxy_url=APP_SETTINGS.get("proxy_url"),
@@ -144,7 +211,7 @@ class CrawlerThread(QThread):
                         if self._is_interrupted:
                             break
                         
-                        lang_tasks = expand_queries_for_language(kw, self.selected_lang)
+                        lang_tasks = expand_queries_for_language(kw, self.selected_lang, excluded_langs=self.excluded_langs)
 
                         for task in lang_tasks:
                             if self._is_interrupted:
@@ -175,6 +242,7 @@ class CrawlerThread(QThread):
                                 date_filter=self.date_filter,
                                 year_range=self.year_range,
                                 include_related=self.include_related,
+                                excluded_langs=self.excluded_langs,
                                 hl=hl,
                                 gl=gl,
                                 display_label=f"{flag} {lang_name}",
@@ -225,6 +293,7 @@ class HunterTab(QWidget):
         super().__init__(parent)
         self.crawler_thread: Optional[CrawlerThread] = None
         self.is_paused = False
+        self.excluded_countries: List[str] = []
         
         self.all_videos: List[Dict[str, Any]] = []
         self.all_domains: List[Dict[str, Any]] = []
@@ -421,13 +490,20 @@ class HunterTab(QWidget):
         self.input_target.returnPressed.connect(self._on_start_or_resume)
         row1.addWidget(self.input_target, 3)
 
-        # Language Selector
+        # Language Selector & Country Exclusion
         self.combo_lang = QComboBox()
         for l in get_language_list():
             self.combo_lang.addItem(l["label"], l["code"])
         self.combo_lang.setMinimumWidth(180)
         self.combo_lang.setMaximumWidth(220)
+        self.combo_lang.currentIndexChanged.connect(self._on_lang_changed)
         row1.addWidget(self.combo_lang)
+
+        self.btn_exclude_countries = QPushButton("🚫 Excluir Países...")
+        self.btn_exclude_countries.setToolTip("Configurar países ou idiomas a serem excluídos das buscas globais.")
+        self.btn_exclude_countries.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.btn_exclude_countries.clicked.connect(self._open_country_exclusion_dialog)
+        row1.addWidget(self.btn_exclude_countries)
 
         # Date & Year Range Selector
         self.combo_date = QComboBox()
@@ -513,21 +589,18 @@ class HunterTab(QWidget):
         self.chk_unlimited.toggled.connect(lambda checked: self.spin_max.setEnabled(not checked))
         row2.addWidget(self.chk_unlimited)
 
-        # Minimum Views Filter (Eliminates unnecessary searches & scraping)
+        # Minimum Views Filter (Clean QLineEdit, zero suffix, easy to edit/delete)
         lbl_min_views = QLabel("Mín. Views:")
         lbl_min_views.setStyleSheet("font-weight: 600;")
         row2.addWidget(lbl_min_views)
 
-        self.spin_min_views = QSpinBox()
-        self.spin_min_views.setRange(0, 50000000)
-        self.spin_min_views.setValue(0)
-        self.spin_min_views.setSingleStep(1000)
-        self.spin_min_views.setSpecialValueText("0 (Sem Mínimo)")
-        self.spin_min_views.setSuffix(" views")
-        self.spin_min_views.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.spin_min_views.setFixedWidth(135)
-        self.spin_min_views.setToolTip("Descarta e ignora vídeos com visualizações inferiores a este valor para evitar buscas desnecessárias.")
-        row2.addWidget(self.spin_min_views)
+        self.input_min_views = QLineEdit()
+        self.input_min_views.setPlaceholderText("0 (Sem Mínimo)")
+        self.input_min_views.setValidator(QIntValidator(0, 100000000))
+        self.input_min_views.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.input_min_views.setFixedWidth(115)
+        self.input_min_views.setToolTip("Mínimo de visualizações do vídeo (ex: 5000). Vídeos com menos views serão ignorados.")
+        row2.addWidget(self.input_min_views)
 
         self.chk_fast_mode = QCheckBox("⚡ Turbo")
         self.chk_fast_mode.setChecked(True)
@@ -581,6 +654,30 @@ class HunterTab(QWidget):
 
         return panel
 
+    def get_min_views(self) -> int:
+        """Parse clean integer from input_min_views without formatting errors."""
+        raw = self.input_min_views.text().replace(".", "").replace(",", "").strip()
+        try:
+            return max(0, int(raw)) if raw else 0
+        except Exception:
+            return 0
+
+    def _on_lang_changed(self):
+        code = self.combo_lang.currentData()
+        self.btn_exclude_countries.setVisible(code == "global")
+
+    def _open_country_exclusion_dialog(self):
+        dialog = CountryExclusionDialog(self.excluded_countries, self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            self.excluded_countries = dialog.get_excluded_codes()
+            cnt = len(self.excluded_countries)
+            if cnt > 0:
+                self.btn_exclude_countries.setText(f"🚫 Excluir Países ({cnt})")
+                self.btn_exclude_countries.setStyleSheet("QPushButton { background-color: #DC2626; color: #FFFFFF; font-weight: 700; }")
+            else:
+                self.btn_exclude_countries.setText("🚫 Excluir Países...")
+                self.btn_exclude_countries.setStyleSheet("")
+
     def _on_search_mode_changed(self):
         mode = self.combo_mode.currentData()
         self.combo_sort.clear()
@@ -588,6 +685,7 @@ class HunterTab(QWidget):
         if mode == "channels":
             self.input_target.setPlaceholderText("Digite canal ou lista de canais (ex: @GameplayRJ, @alanzoka, https://youtube.com/@canal)...")
             self.combo_lang.setVisible(False)
+            self.btn_exclude_countries.setVisible(False)
             self.combo_date.setVisible(False)
             self.widget_custom_years.setVisible(False)
             self.chk_include_related.setVisible(False)
@@ -597,6 +695,7 @@ class HunterTab(QWidget):
         else:
             self.input_target.setPlaceholderText("Digite termos de busca (ex: GTA, dropshipping, marketing digital)...")
             self.combo_lang.setVisible(True)
+            self._on_lang_changed()
             self.combo_date.setVisible(True)
             self._on_date_filter_changed()
             self.chk_include_related.setVisible(True)
@@ -661,12 +760,14 @@ class HunterTab(QWidget):
         self.btn_export_csv = QPushButton("📄 Exportar CSV")
         self.btn_export_csv.setObjectName("btn_success")
         self.btn_export_csv.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.btn_export_csv.setToolTip("Exportar lista formatada em CSV dos domínios disponíveis")
         self.btn_export_csv.clicked.connect(self._export_csv)
         layout.addWidget(self.btn_export_csv)
 
         self.btn_export_json = QPushButton("📋 Exportar JSON")
         self.btn_export_json.setObjectName("btn_success")
         self.btn_export_json.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.btn_export_json.setToolTip("Exportar lista formatada em JSON dos domínios disponíveis")
         self.btn_export_json.clicked.connect(self._export_json)
         layout.addWidget(self.btn_export_json)
 
@@ -717,7 +818,7 @@ class HunterTab(QWidget):
         else:
             year_range = None
 
-        min_views = self.spin_min_views.value()
+        min_views = self.get_min_views()
         max_vids = 100000 if self.chk_unlimited.isChecked() else self.spin_max.value()
         sort_by = self.combo_sort.currentData()
         fast_mode = self.chk_fast_mode.isChecked()
@@ -742,6 +843,8 @@ class HunterTab(QWidget):
             filter_details.append(f"Mín. Views: {min_views:,}")
         if year_range:
             filter_details.append(f"Anos: {year_range[0]}-{year_range[1]}")
+        if selected_lang == "global" and self.excluded_countries:
+            filter_details.append(f"Excluídos: {len(self.excluded_countries)} países")
         details_str = f" | {' • '.join(filter_details)}" if filter_details else ""
 
         self.status_label.setText(f"Minerando vídeos de {mode_title} (Turbo: {fast_mode}{details_str})...")
@@ -758,6 +861,7 @@ class HunterTab(QWidget):
             sort_by=sort_by,
             fast_mode=fast_mode,
             include_related=include_related,
+            excluded_langs=self.excluded_countries,
             loop_24h=loop_24h,
             parent=self
         )
