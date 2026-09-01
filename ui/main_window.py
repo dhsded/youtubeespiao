@@ -28,7 +28,7 @@ from ui.settings_tab import SettingsTab
 from ui.help_dialog import HelpDialog
 
 class MainWindow(QMainWindow):
-    def __init__(self):
+    def __init__(self, initial_target: Optional[str] = None, autostart: bool = False):
         super().__init__()
         self.instance_number = InstanceManager.get_instance_number()
         self.setWindowTitle(f"YouTube Espião v3.0.0 #{self.instance_number} — Rastreador de Domínios Expirados")
@@ -40,6 +40,13 @@ class MainWindow(QMainWindow):
 
         self._init_ui()
         self._init_tray_icon()
+
+        if initial_target:
+            self.hunter_tab.input_target.setText(initial_target)
+
+        if autostart:
+            from PyQt6.QtCore import QTimer
+            QTimer.singleShot(1200, self.hunter_tab._on_start_or_resume)
 
     def _init_ui(self):
         central_widget = QWidget()

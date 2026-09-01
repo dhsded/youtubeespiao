@@ -24,7 +24,7 @@ import yt_dlp
 from core.metrics_calculator import calculate_video_metrics
 from core.domain_extractor import DomainExtractor
 from core.domain_validator import DomainValidator
-from core.translator import is_content_matching_language
+from core.translator import is_content_matching_language, expand_queries_for_language
 from core.relevance_filter import (
     get_youtube_related_suggestions,
     build_topic_profile,

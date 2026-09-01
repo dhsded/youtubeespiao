@@ -833,6 +833,36 @@ class TestYoutubeEspiaoCore(unittest.TestCase):
         self.assertIn("Big Hit", processed_titles)
         self.assertNotIn("Low Views", processed_titles)
 
+    def test_profile_manager_and_batch_execution(self):
+        """Test default profile saving, loading, and batch multi-instance parsing."""
+        from core.profile_manager import save_default_profile, load_default_profile, DEFAULT_PROFILE
+        
+        test_prof = {
+            "search_mode": "keywords",
+            "target_lang": "global",
+            "excluded_countries": ["hi", "ru", "ar"],
+            "date_filter": "custom_range",
+            "year_start": 2021,
+            "year_end": 2025,
+            "sort_by": "view_count",
+            "max_videos": 100,
+            "unlimited_videos": True,
+            "min_views": 50000,
+            "fast_mode": True,
+            "include_related": True,
+            "loop_24h": False
+        }
+
+        # Save profile
+        self.assertTrue(save_default_profile(test_prof))
+
+        # Load profile
+        loaded = load_default_profile()
+        self.assertEqual(loaded["min_views"], 50000)
+        self.assertEqual(loaded["excluded_countries"], ["hi", "ru", "ar"])
+        self.assertEqual(loaded["year_start"], 2021)
+        self.assertTrue(loaded["unlimited_videos"])
+
 if __name__ == "__main__":
     unittest.main()
 

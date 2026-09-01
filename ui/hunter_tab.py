@@ -31,6 +31,7 @@ from core.translator import get_language_list, expand_queries_for_language, AVAI
 from core.metrics_calculator import format_number
 from core.exporter import DataExporter
 from core.autosave_manager import AutoSaveManager
+from core.profile_manager import load_default_profile, save_default_profile, launch_instance_with_target
 from ui.video_table_model import VideoTableView, DomainTableView
 from ui.settings_tab import APP_SETTINGS
 
@@ -314,6 +315,7 @@ class HunterTab(QWidget):
         self.telemetry_timer.timeout.connect(self._update_telemetry)
 
         self._init_ui()
+        self._restore_default_profile(silent=True)
         self._restore_previous_session_if_any()
 
     def set_background_mode(self, is_bg: bool):
@@ -649,10 +651,200 @@ class HunterTab(QWidget):
         self.btn_view_live.clicked.connect(lambda: self.switch_to_browser_tab.emit())
         row2.addWidget(self.btn_view_live)
 
+        row2.addSpacing(6)
+
+        # 5. BATCH TXT MULTI-INSTANCE BUTTON
+        self.btn_batch_txt = QPushButton("📂 Abrir Lista .TXT (Multi-Instâncias)")
+        self.btn_batch_txt.setObjectName("btn_batch_action")
+        self.btn_batch_txt.setToolTip("Carregar arquivo de bloco de notas (.txt) com termos/canais por linha para abrir múltiplas instâncias e minerar automaticamente.")
+        self.btn_batch_txt.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.btn_batch_txt.setStyleSheet("""
+            QPushButton#btn_batch_action {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #0369A1, stop:1 #0284C7);
+                color: #FFFFFF;
+                font-weight: 700;
+                font-size: 11px;
+                padding: 4px 10px;
+                border-radius: 6px;
+                border: 1px solid #38BDF8;
+            }
+            QPushButton#btn_batch_action:hover {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #0284C7, stop:1 #38BDF8);
+            }
+        """)
+        self.btn_batch_txt.clicked.connect(self._load_batch_txt_file)
+        row2.addWidget(self.btn_batch_txt)
+
+        # 6. SAVE DEFAULT PRESET BUTTON
+        self.btn_save_default = QPushButton("💾 Salvar Padrão")
+        self.btn_save_default.setToolTip("Salvar as opções atuais (idioma, datas, filtros, views mínimas) como padrão permanente.")
+        self.btn_save_default.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.btn_save_default.clicked.connect(self._save_current_as_default_profile)
+        row2.addWidget(self.btn_save_default)
+
+        # 7. RESTORE DEFAULT PRESET BUTTON
+        self.btn_restore_default = QPushButton("🔄 Restaurar Padrão")
+        self.btn_restore_default.setToolTip("Restaurar as opções salvas como padrão.")
+        self.btn_restore_default.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.btn_restore_default.clicked.connect(lambda: self._restore_default_profile(silent=False))
+        row2.addWidget(self.btn_restore_default)
+
         row2.addStretch()
         panel_layout.addLayout(row2)
 
         return panel
+
+    def _apply_profile_to_ui(self, profile: Dict[str, Any]):
+        """Apply a saved configuration dictionary to the UI elements cleanly."""
+        try:
+            # Search mode
+            mode = profile.get("search_mode", "keywords")
+            m_idx = self.combo_mode.findData(mode)
+            if m_idx >= 0:
+                self.combo_mode.setCurrentIndex(m_idx)
+
+            # Language
+            lang = profile.get("target_lang", "global")
+            l_idx = self.combo_lang.findData(lang)
+            if l_idx >= 0:
+                self.combo_lang.setCurrentIndex(l_idx)
+
+            # Excluded countries
+            self.excluded_countries = profile.get("excluded_countries", [])
+            cnt = len(self.excluded_countries)
+            if cnt > 0:
+                self.btn_exclude_countries.setText(f"🚫 Excluir Países ({cnt})")
+                self.btn_exclude_countries.setStyleSheet("QPushButton { background-color: #DC2626; color: #FFFFFF; font-weight: 700; }")
+            else:
+                self.btn_exclude_countries.setText("🚫 Excluir Países...")
+                self.btn_exclude_countries.setStyleSheet("")
+
+            # Date Filter
+            d_filter = profile.get("date_filter", "all_time")
+            d_idx = self.combo_date.findData(d_filter)
+            if d_idx >= 0:
+                self.combo_date.setCurrentIndex(d_idx)
+
+            # Years
+            self.spin_year_start.setValue(profile.get("year_start", 2020))
+            self.spin_year_end.setValue(profile.get("year_end", 2026))
+
+            # Sort By
+            sort_by = profile.get("sort_by", "view_count")
+            s_idx = self.combo_sort.findData(sort_by)
+            if s_idx >= 0:
+                self.combo_sort.setCurrentIndex(s_idx)
+
+            # Limits & Views
+            self.spin_max.setValue(profile.get("max_videos", 50))
+            self.chk_unlimited.setChecked(profile.get("unlimited_videos", False))
+            min_v = profile.get("min_views", 0)
+            self.input_min_views.setText(str(min_v) if min_v > 0 else "")
+
+            # Checkboxes
+            self.chk_fast_mode.setChecked(profile.get("fast_mode", True))
+            self.chk_include_related.setChecked(profile.get("include_related", True))
+            self.chk_mode_24h.setChecked(profile.get("loop_24h", False))
+        except Exception as e:
+            pass
+
+    def _get_current_profile_from_ui(self) -> Dict[str, Any]:
+        """Extract current active UI settings into a persistent dictionary."""
+        return {
+            "search_mode": self.combo_mode.currentData(),
+            "target_lang": self.combo_lang.currentData(),
+            "excluded_countries": list(self.excluded_countries),
+            "date_filter": self.combo_date.currentData(),
+            "year_start": self.spin_year_start.value(),
+            "year_end": self.spin_year_end.value(),
+            "sort_by": self.combo_sort.currentData(),
+            "max_videos": self.spin_max.value(),
+            "unlimited_videos": self.chk_unlimited.isChecked(),
+            "min_views": self.get_min_views(),
+            "fast_mode": self.chk_fast_mode.isChecked(),
+            "include_related": self.chk_include_related.isChecked(),
+            "loop_24h": self.chk_mode_24h.isChecked()
+        }
+
+    def _save_current_as_default_profile(self):
+        prof = self._get_current_profile_from_ui()
+        if save_default_profile(prof):
+            QMessageBox.information(
+                self,
+                "Configuração Padrão Salva",
+                "✅ Suas configurações foram salvas como padrão com sucesso!\n\n"
+                "Elas serão carregadas automaticamente em todas as novas instâncias e ao abrir o programa."
+            )
+
+    def _restore_default_profile(self, silent: bool = False):
+        prof = load_default_profile()
+        self._apply_profile_to_ui(prof)
+        if not silent:
+            self._append_log("🔄 Configurações padrão restauradas.")
+
+    def _load_batch_txt_file(self):
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Selecionar Lista de Termos / Canais (.txt)",
+            "",
+            "Arquivos de Texto (*.txt);;Todos os Arquivos (*.*)"
+        )
+        if not file_path or not os.path.exists(file_path):
+            return
+
+        try:
+            with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                lines = [line.strip() for line in f if line.strip() and not line.strip().startswith("#")]
+        except Exception as e:
+            QMessageBox.critical(self, "Erro ao Ler Arquivo", f"Não foi possível ler o arquivo:\n{e}")
+            return
+
+        if not lines:
+            QMessageBox.warning(self, "Arquivo Vazio", "O arquivo selecionado não contém nenhum termo de busca ou canal válido.")
+            return
+
+        total = len(lines)
+        if total == 1:
+            self.input_target.setText(lines[0])
+            self._append_log(f"📂 1 termo carregado do arquivo: '{lines[0]}'")
+            return
+
+        # Prompt user with clean options
+        msg = QMessageBox(self)
+        msg.setWindowTitle("Carregar Lista de Termos (.txt)")
+        msg.setText(
+            f"<b>Foram encontrados {total} termos/canais no arquivo:</b><br>"
+            f"<span style='color: #38BDF8;'>{', '.join(lines[:4])}{'...' if total > 4 else ''}</span><br><br>"
+            f"Deseja abrir <b>{total} instâncias do YouTube Espião</b> (uma para cada linha) com as configurações padrão atuais e iniciar a busca automática?"
+        )
+        
+        btn_multi = msg.addButton(f"🚀 Abrir {total} Instâncias com Busca Automática", QMessageBox.ButtonRole.AcceptRole)
+        btn_single = msg.addButton(f"🎯 Carregar Todos nesta Instância ({total} juntos)", QMessageBox.ButtonRole.ActionRole)
+        btn_cancel = msg.addButton("Cancelar", QMessageBox.ButtonRole.RejectRole)
+        msg.setDefaultButton(btn_multi)
+        msg.exec()
+
+        if msg.clickedButton() == btn_multi:
+            # 1. Save current settings as default profile so all spawned instances inherit them
+            save_default_profile(self._get_current_profile_from_ui())
+
+            # 2. Start 1st term in current instance
+            self.input_target.setText(lines[0])
+            self._append_log(f"🚀 [Instância Atual] Iniciando busca automática para: '{lines[0]}'")
+            QTimer.singleShot(600, self._on_start_or_resume)
+
+            # 3. Launch remaining instances in background
+            launched = 1
+            for term in lines[1:]:
+                time.sleep(0.4)
+                if launch_instance_with_target(term, autostart=True):
+                    launched += 1
+            
+            self._append_log(f"✨ {launched} instâncias iniciadas com sucesso a partir do arquivo .txt!")
+
+        elif msg.clickedButton() == btn_single:
+            self.input_target.setText(", ".join(lines))
+            self._append_log(f"📂 {total} termos carregados na instância atual.")
 
     def get_min_views(self) -> int:
         """Parse clean integer from input_min_views without formatting errors."""

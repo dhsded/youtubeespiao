@@ -86,17 +86,21 @@ def main():
     app.setApplicationDisplayName(f"YouTube Espião #{instance_num}")
     app.setQuitOnLastWindowClosed(False)
 
-    # Set App Icon
-    if getattr(sys, 'frozen', False):
-        base_dir = getattr(sys, '_MEIPASS', os.path.dirname(sys.executable))
-    else:
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-    icon_path = os.path.join(base_dir, "assets", "icon.png")
-    if os.path.exists(icon_path):
-        app_icon = QIcon(icon_path)
-        app.setWindowIcon(app_icon)
+    # Parse CLI launch arguments for batch multi-instance automation
+    target_arg = None
+    autostart_arg = False
+    args_list = list(sys.argv)
+    if "--target" in args_list:
+        try:
+            t_idx = args_list.index("--target")
+            if t_idx + 1 < len(args_list):
+                target_arg = args_list[t_idx + 1]
+        except Exception:
+            pass
+    if "--autostart" in args_list:
+        autostart_arg = True
 
-    window = MainWindow()
+    window = MainWindow(initial_target=target_arg, autostart=autostart_arg)
     window.show()
 
     sys.exit(app.exec())
