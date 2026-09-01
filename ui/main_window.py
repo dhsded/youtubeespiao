@@ -106,11 +106,37 @@ class MainWindow(QMainWindow):
         self.btn_theme.clicked.connect(self._toggle_theme)
         header_layout.addWidget(self.btn_theme)
 
+        # Minimize to Tray Button (Explicit System Tray option)
+        self.btn_minimize_tray = QPushButton("📥 Minimizar p/ Bandeja")
+        self.btn_minimize_tray.setObjectName("btn_tray_action")
+        self.btn_minimize_tray.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.btn_minimize_tray.setToolTip("Ocultar a janela na bandeja do sistema (perto do relógio) mantendo a execução em segundo plano.")
+        self.btn_minimize_tray.setStyleSheet("""
+            QPushButton#btn_tray_action {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #1E293B, stop:1 #334155);
+                color: #F1F5F9;
+                font-weight: 700;
+                font-size: 11px;
+                padding: 4px 10px;
+                border-radius: 6px;
+                border: 1px solid #475569;
+            }
+            QPushButton#btn_tray_action:hover {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #334155, stop:1 #475569);
+                border: 1px solid #64748B;
+            }
+            QPushButton#btn_tray_action:pressed {
+                background: #0F172A;
+            }
+        """)
+        self.btn_minimize_tray.clicked.connect(self._minimize_to_tray)
+        header_layout.addWidget(self.btn_minimize_tray)
+
         # Close Completely Button (Top Header)
         self.btn_close_app = QPushButton("❌ Fechar Programa")
         self.btn_close_app.setObjectName("btn_close_action")
         self.btn_close_app.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        self.btn_close_app.setToolTip("Encerrar todos os processos e fechar este aplicativo totalmente (sem minimizar na bandeja).")
+        self.btn_close_app.setToolTip("Encerrar todos os processos e fechar este aplicativo totalmente.")
         self.btn_close_app.setStyleSheet("""
             QPushButton#btn_close_action {
                 background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #991B1B, stop:1 #DC2626);
@@ -268,9 +294,17 @@ class MainWindow(QMainWindow):
     def changeEvent(self, event):
         if event.type() == QEvent.Type.WindowStateChange:
             if self.isMinimized():
-                self.hide()
+                # Standard minimize to Windows Taskbar: keep window in taskbar and throttle background resources
                 self._optimize_memory_for_background()
+            elif not self.isMinimized():
+                if hasattr(self, "hunter_tab"):
+                    self.hunter_tab.set_background_mode(False)
         super().changeEvent(event)
+
+    def _minimize_to_tray(self):
+        """Explicitly hide window into the system tray area."""
+        self.hide()
+        self._optimize_memory_for_background()
 
     def closeEvent(self, event):
         # If crawler is currently active, prompt user with choices
