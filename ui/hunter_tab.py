@@ -292,6 +292,7 @@ class HunterTab(QWidget):
         self.domain_table = DomainTableView()
         self.domain_table.buy_domain_requested.connect(self._on_buy_domain_requested)
         self.domain_table.open_video_requested.connect(self._on_open_video_requested)
+        self.domain_table.domain_excluded_requested.connect(self._on_domain_excluded)
         domain_layout.addWidget(self.domain_table)
 
         self.results_tabs.addTab(domain_container, "💎 Domínios & Instagrams Expirados")
@@ -835,6 +836,33 @@ class HunterTab(QWidget):
         from PyQt6.QtCore import QUrl
         if url:
             QDesktopServices.openUrl(QUrl(url))
+
+    def _on_domain_excluded(self, excluded_target: str):
+        """Immediately remove excluded domain from tables, memory and session storage."""
+        clean_target = excluded_target.strip().lower().replace("@", "")
+
+        # 1. Filter all_domains
+        self.all_domains = [
+            d for d in self.all_domains
+            if (d.get("display_name") or "").strip().lower().replace("📸 @", "").replace("@", "") != clean_target
+            and (d.get("root_domain") or "").strip().lower().replace("@", "") != clean_target
+        ]
+        self.domain_table.set_domains(self.all_domains)
+
+        # 2. Filter video internal domain references
+        for v in self.all_videos:
+            v_doms = v.get("domains", [])
+            v["domains"] = [
+                d for d in v_doms
+                if (d.get("display_name") or "").strip().lower().replace("📸 @", "").replace("@", "") != clean_target
+                and (d.get("root_domain") or "").strip().lower().replace("@", "") != clean_target
+            ]
+        self.video_table.set_videos(self.all_videos)
+
+        self._update_stat_cards()
+        self._trigger_autosave()
+        self._append_log(f"🚫 '{excluded_target}' adicionado à Lista de Exclusão e removido dos resultados.")
+        self.status_label.setText(f"Domínio '{excluded_target}' adicionado à lista de exclusão.")
 
     def _clear_results(self):
         self.all_videos.clear()

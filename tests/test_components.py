@@ -496,5 +496,32 @@ class TestYoutubeEspiaoCore(unittest.TestCase):
         if os.path.exists(txt_path):
             os.remove(txt_path)
 
+    def test_add_to_exclusion_list(self):
+        """Test adding domain/Instagram to exclusion list and ensuring it is ignored in subsequent extraction."""
+        from core.domain_extractor import add_to_exclusion_list, IGNORE_DOMAINS, ALL_EXCLUDED_DOMAINS
+        extractor = DomainExtractor()
+
+        sample_domain = "dominio-para-excluir-12345.com"
+        sample_ig = "perfil_para_excluir_987"
+
+        # Initially extractable
+        text = f"Site: https://{sample_domain}/aula e Insta: @{sample_ig}"
+        res1 = extractor.process_text_for_domains(text)
+        doms1 = [d["root_domain"] for d in res1]
+        self.assertIn(sample_domain, doms1)
+
+        # Add to exclusion list
+        add_to_exclusion_list(sample_domain)
+        add_to_exclusion_list(sample_ig)
+
+        self.assertIn(sample_domain, IGNORE_DOMAINS)
+        self.assertIn(sample_ig, IGNORE_DOMAINS)
+
+        # Extract again -> Must be completely excluded
+        res2 = extractor.process_text_for_domains(text)
+        doms2 = [d["root_domain"] for d in res2]
+        self.assertNotIn(sample_domain, doms2)
+        self.assertFalse(any(sample_ig in d.get("root_domain", "") for d in res2))
+
 if __name__ == "__main__":
     unittest.main()

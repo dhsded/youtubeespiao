@@ -20,7 +20,8 @@ from typing import List, Dict, Any, Optional
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTableWidget,
     QTableWidgetItem, QPushButton, QLabel, QComboBox,
-    QFrame, QHeaderView, QLineEdit, QCheckBox, QMenu, QDialog
+    QFrame, QHeaderView, QLineEdit, QCheckBox, QMenu, QDialog,
+    QMessageBox, QApplication
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QUrl, QPoint
 from PyQt6.QtGui import QColor, QFont, QCursor, QPixmap, QImage, QAction
@@ -534,6 +535,7 @@ class DomainTableView(QWidget):
     """
     buy_domain_requested = pyqtSignal(str)
     open_video_requested = pyqtSignal(str)
+    domain_excluded_requested = pyqtSignal(str)
 
     COLUMN_HEADERS = [
         "Status",
@@ -605,6 +607,8 @@ class DomainTableView(QWidget):
         self.table = QTableWidget()
         self.table.setColumnCount(len(self.COLUMN_HEADERS))
         self.table.setHorizontalHeaderLabels(self.COLUMN_HEADERS)
+        self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.table.customContextMenuRequested.connect(self._on_table_context_menu)
 
         header = self.table.horizontalHeader()
         header.setSectionsMovable(True)
@@ -999,6 +1003,29 @@ class DomainTableView(QWidget):
                 btn_buy.clicked.connect(lambda _, l=ig_url: self.buy_domain_requested.emit(l))
                 action_layout.addWidget(btn_buy)
 
+            # Exclusion / Blacklist Button
+            btn_exclude = QPushButton("🚫")
+            btn_exclude.setObjectName("btn_table_action")
+            btn_exclude.setToolTip(f"Adicionar '{display_name}' à lista de exclusão (ignorar para sempre)")
+            btn_exclude.setStyleSheet("""
+                QPushButton {
+                    background-color: #1E293B;
+                    color: #EF4444;
+                    border: 1px solid #475569;
+                    font-weight: 800;
+                    font-size: 11px;
+                    padding: 4px 8px;
+                    border-radius: 4px;
+                }
+                QPushButton:hover {
+                    background-color: #DC2626;
+                    color: #FFFFFF;
+                }
+            """)
+            btn_exclude.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+            btn_exclude.clicked.connect(lambda _, name=display_name, raw=d.get("root_domain", ""): self._on_exclude_domain(name, raw))
+            action_layout.addWidget(btn_exclude)
+
             self.table.setCellWidget(row, 13, action_widget)
 
         self.table.setSortingEnabled(True)
@@ -1007,3 +1034,64 @@ class DomainTableView(QWidget):
         """Open modal dialog detailing all associated videos for this domain."""
         dialog = AssociatedVideosDialog(domain_name, associated_videos, self)
         dialog.exec()
+
+    def _on_table_context_menu(self, pos: QPoint):
+        item = self.table.itemAt(pos)
+        if not item:
+            return
+        row = item.row()
+        if row < 0 or row >= len(self.filtered_domains_data):
+            return
+
+        d = self.filtered_domains_data[row]
+        display_name = d.get("display_name") or d.get("root_domain", "")
+        root_domain = d.get("root_domain", "")
+        buy_link = d.get("buy_link", "")
+        v_url = d.get("video_url", "")
+        assoc_vids = d.get("associated_videos", [])
+
+        menu = QMenu(self)
+        menu.setStyleSheet("QMenu { padding: 6px; font-weight: 600; }")
+
+        action_copy = QAction(f"📋 Copiar '{display_name}'", menu)
+        action_copy.triggered.connect(lambda: QApplication.clipboard().setText(display_name))
+        menu.addAction(action_copy)
+
+        if buy_link:
+            action_buy = QAction("🛒 Abrir Link de Compra / Claim ↗", menu)
+            action_buy.triggered.connect(lambda: self.buy_domain_requested.emit(buy_link))
+            menu.addAction(action_buy)
+
+        if v_url:
+            action_watch = QAction("▶ Assistir Vídeo Principal ↗", menu)
+            action_watch.triggered.connect(lambda: self.open_video_requested.emit(v_url))
+            menu.addAction(action_watch)
+
+        if len(assoc_vids) > 1:
+            action_vids = QAction(f"🎯 Ver Todos os {len(assoc_vids)} Vídeos Associados", menu)
+            action_vids.triggered.connect(lambda: self._open_associated_videos_dialog(display_name, assoc_vids))
+            menu.addAction(action_vids)
+
+        menu.addSeparator()
+
+        action_exclude = QAction("🚫 Adicionar à Lista de Exclusão (Ignorar Domínio)", menu)
+        action_exclude.triggered.connect(lambda: self._on_exclude_domain(display_name, root_domain))
+        menu.addAction(action_exclude)
+
+        menu.exec(self.table.viewport().mapToGlobal(pos))
+
+    def _on_exclude_domain(self, display_name: str, root_domain: str):
+        target = root_domain or display_name
+        clean_target = target.replace("📸 @", "").replace("@", "").strip()
+        reply = QMessageBox.question(
+            self,
+            "Adicionar à Lista de Exclusão",
+            f"Deseja adicionar o domínio '{clean_target}' à Lista de Exclusão?\n\n"
+            f"• Ele será removido imediatamente desta tabela.\n"
+            f"• Ele nunca mais aparecerá nesta ou em futuras varreduras.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            from core.domain_extractor import add_to_exclusion_list
+            add_to_exclusion_list(clean_target)
+            self.domain_excluded_requested.emit(clean_target)

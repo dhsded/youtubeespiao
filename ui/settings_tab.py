@@ -83,11 +83,28 @@ class SettingsTab(QWidget):
 
         layout.addWidget(group_ignore, 1)
 
+    def showEvent(self, event):
+        super().showEvent(event)
+        self.txt_ignored.setPlainText("\n".join(sorted(IGNORE_DOMAINS)))
+
     def _save_settings(self):
         # Update ignore list
-        lines = [l.strip().lower() for l in self.txt_ignored.toPlainText().splitlines() if l.strip()]
+        lines = [l.strip().lower().replace("@", "") for l in self.txt_ignored.toPlainText().splitlines() if l.strip()]
         IGNORE_DOMAINS.clear()
         IGNORE_DOMAINS.update(lines)
+
+        from core.domain_extractor import ALL_EXCLUDED_DOMAINS, _get_exclusion_file_path
+        ALL_EXCLUDED_DOMAINS.clear()
+        ALL_EXCLUDED_DOMAINS.update(lines)
+
+        # Save to disk
+        path = _get_exclusion_file_path()
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                for item in sorted(lines):
+                    f.write(f"{item}\n")
+        except Exception:
+            pass
 
         # Update safety settings
         APP_SETTINGS["min_delay"] = self.spin_min_delay.value()
@@ -100,5 +117,5 @@ class SettingsTab(QWidget):
             f"Configurações atualizadas com sucesso!\n\n"
             f"• Delays: {APP_SETTINGS['min_delay']}s - {APP_SETTINGS['max_delay']}s\n"
             f"• Proxy: {'Ativo' if APP_SETTINGS['proxy_url'] else 'Desativado (IP Local)'}\n"
-            f"• Domínios ignorados: {len(IGNORE_DOMAINS)}"
+            f"• Domínios ignorados / lista de exclusão: {len(IGNORE_DOMAINS)}"
         )

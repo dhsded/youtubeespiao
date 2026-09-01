@@ -57,8 +57,60 @@ IGNORE_DOMAINS = {
     "forms.gle", "docs.google.com", "drive.google.com", "notion.so", "canva.com"
 }
 
+import os
+import logging
+
+logger = logging.getLogger(__name__)
+
 # Combine all infrastructure to exclude from candidate domains
 ALL_EXCLUDED_DOMAINS = IGNORE_DOMAINS.union(SHORTENER_DOMAINS)
+
+def _get_exclusion_file_path() -> str:
+    appdata = os.getenv("APPDATA") or os.path.expanduser("~")
+    save_dir = os.path.join(appdata, "YouTube Espiao")
+    os.makedirs(save_dir, exist_ok=True)
+    return os.path.join(save_dir, "custom_exclusions.txt")
+
+def load_custom_exclusions():
+    """Load persistent custom user exclusions into IGNORE_DOMAINS."""
+    path = _get_exclusion_file_path()
+    if os.path.exists(path):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                for line in f:
+                    dom = line.strip().lower().replace("@", "")
+                    if dom:
+                        IGNORE_DOMAINS.add(dom)
+                        ALL_EXCLUDED_DOMAINS.add(dom)
+        except Exception as e:
+            logger.debug(f"Failed to read custom exclusions: {e}")
+
+def add_to_exclusion_list(domain: str) -> bool:
+    """Add a domain or Instagram handle to persistent exclusion list."""
+    clean = domain.strip().lower().replace("@", "").replace("https://", "").replace("http://", "").replace("www.", "").strip("/")
+    if not clean:
+        return False
+    
+    IGNORE_DOMAINS.add(clean)
+    ALL_EXCLUDED_DOMAINS.add(clean)
+    
+    path = _get_exclusion_file_path()
+    try:
+        current_custom = set()
+        if os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as f:
+                current_custom = {l.strip().lower().replace("@", "") for l in f if l.strip()}
+        current_custom.add(clean)
+        with open(path, "w", encoding="utf-8") as f:
+            for item in sorted(current_custom):
+                f.write(f"{item}\n")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to persist exclusion: {e}")
+        return False
+
+# Initialize custom exclusions on module load
+load_custom_exclusions()
 
 # Discard non-web extensions (e.g. filename mentions in text)
 NON_WEB_EXTENSIONS = {
@@ -205,6 +257,10 @@ class DomainExtractor:
         # 1. Process Instagram Accounts
         ig_handles = self.instagram_validator.extract_handles_from_text(text)
         for handle in ig_handles:
+            h_clean = handle.lower().strip().replace("@", "")
+            if h_clean in IGNORE_DOMAINS or f"instagram.com/{h_clean}" in IGNORE_DOMAINS or f"@{h_clean}" in IGNORE_DOMAINS:
+                continue
+
             ig_res = self.instagram_validator.validate_handle(handle)
             results.append({
                 "raw_url": f"https://instagram.com/{handle}",
