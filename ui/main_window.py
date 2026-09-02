@@ -11,7 +11,7 @@ import os
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QTabWidget, QLabel, QFrame, QPushButton, QApplication,
-    QSystemTrayIcon, QMenu
+    QSystemTrayIcon, QMenu, QMessageBox
 )
 from PyQt6.QtCore import Qt, QEvent
 from PyQt6.QtGui import (
@@ -69,19 +69,19 @@ class MainWindow(QMainWindow):
         lbl_subtitle = QLabel("•  Minerador de Vídeos, Métricas & Validador de Domínios Expirados")
         lbl_subtitle.setObjectName("header_subtitle")
 
-        # Top Instance Identification Badge with Unique Color per Instance
+        # Top Instance Identification Badge with Clean YouTube Studio Pill Style
         color_cfg = get_instance_color(self.instance_number)
         self.badge_instance = QLabel(f"🔢 INSTÂNCIA #{self.instance_number}")
         self.badge_instance.setObjectName("badge_instance")
         self.badge_instance.setStyleSheet(f"""
             QLabel#badge_instance {{
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 {color_cfg['start']}, stop:1 {color_cfg['end']});
-                color: {color_cfg['text']};
+                background-color: #1F1F1F;
+                color: {color_cfg['start']};
                 font-weight: 800;
                 font-size: 11px;
-                padding: 4px 12px;
+                padding: 4px 10px;
                 border-radius: 12px;
-                border: 1px solid {color_cfg['border']};
+                border: 1px solid {color_cfg['start']};
                 letter-spacing: 0.5px;
             }}
         """)
@@ -91,8 +91,16 @@ class MainWindow(QMainWindow):
         header_layout.addWidget(lbl_subtitle)
         header_layout.addStretch()
 
-        # Help Button (Top Right)
-        self.btn_help = QPushButton("📖 AJUDA")
+        # ➕ Nova Instância Button
+        self.btn_new_instance = QPushButton("➕ Nova Instância")
+        self.btn_new_instance.setObjectName("btn_new_instance")
+        self.btn_new_instance.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.btn_new_instance.setToolTip("Abrir uma nova janela/instância independente do programa sem sair da atual.")
+        self.btn_new_instance.clicked.connect(self._spawn_new_instance)
+        header_layout.addWidget(self.btn_new_instance)
+
+        # Help Button
+        self.btn_help = QPushButton("📖 Ajuda")
         self.btn_help.setObjectName("btn_help_action")
         self.btn_help.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.btn_help.setToolTip("Abrir manual didático explicando todas as fórmulas, métricas e validação de domínios livres.")
@@ -106,55 +114,19 @@ class MainWindow(QMainWindow):
         self.btn_theme.clicked.connect(self._toggle_theme)
         header_layout.addWidget(self.btn_theme)
 
-        # Minimize to Tray Button (Explicit System Tray option)
-        self.btn_minimize_tray = QPushButton("📥 Minimizar p/ Bandeja")
+        # Minimize to Tray Button
+        self.btn_minimize_tray = QPushButton("📥 Minimizar")
         self.btn_minimize_tray.setObjectName("btn_tray_action")
         self.btn_minimize_tray.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        self.btn_minimize_tray.setToolTip("Ocultar a janela na bandeja do sistema (perto do relógio) mantendo a execução em segundo plano.")
-        self.btn_minimize_tray.setStyleSheet("""
-            QPushButton#btn_tray_action {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #1E293B, stop:1 #334155);
-                color: #F1F5F9;
-                font-weight: 700;
-                font-size: 11px;
-                padding: 4px 10px;
-                border-radius: 6px;
-                border: 1px solid #475569;
-            }
-            QPushButton#btn_tray_action:hover {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #334155, stop:1 #475569);
-                border: 1px solid #64748B;
-            }
-            QPushButton#btn_tray_action:pressed {
-                background: #0F172A;
-            }
-        """)
+        self.btn_minimize_tray.setToolTip("Ocultar a janela na bandeja do sistema mantendo a execução em segundo plano.")
         self.btn_minimize_tray.clicked.connect(self._minimize_to_tray)
         header_layout.addWidget(self.btn_minimize_tray)
 
-        # Close Completely Button (Top Header)
-        self.btn_close_app = QPushButton("❌ Fechar Programa")
+        # Close Completely Button
+        self.btn_close_app = QPushButton("❌ Fechar")
         self.btn_close_app.setObjectName("btn_close_action")
         self.btn_close_app.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.btn_close_app.setToolTip("Encerrar todos os processos e fechar este aplicativo totalmente.")
-        self.btn_close_app.setStyleSheet("""
-            QPushButton#btn_close_action {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #991B1B, stop:1 #DC2626);
-                color: #FFFFFF;
-                font-weight: 700;
-                font-size: 11px;
-                padding: 4px 12px;
-                border-radius: 6px;
-                border: 1px solid #EF4444;
-            }
-            QPushButton#btn_close_action:hover {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #B91C1C, stop:1 #EF4444);
-                border: 1px solid #F87171;
-            }
-            QPushButton#btn_close_action:pressed {
-                background: #7F1D1D;
-            }
-        """)
         self.btn_close_app.clicked.connect(self._force_quit)
         header_layout.addWidget(self.btn_close_app)
 
@@ -398,3 +370,13 @@ class MainWindow(QMainWindow):
     def _on_live_video_stream(self, url: str, title: str, video_data: Optional[Dict] = None):
         """Update live video feed in embedded browser and monitor with rich intelligence in real-time."""
         self.browser_view.set_live_video(url, title, video_data)
+
+    def _spawn_new_instance(self):
+        """Spawns a new independent instance of the program without needing to manually launch the exe."""
+        success = InstanceManager.spawn_new_instance()
+        if not success:
+            QMessageBox.warning(
+                self,
+                "Nova Instância",
+                "Não foi possível iniciar uma nova instância automaticamente. Tente abrir o executável diretamente."
+            )

@@ -47,8 +47,8 @@ class LiveMonitorCard(QWidget):
         self.card.setObjectName("live_monitor_card")
         self.card.setStyleSheet("""
             QFrame#live_monitor_card {
-                background-color: #131B2A;
-                border: 1px solid #222F44;
+                background-color: #181818;
+                border: 1px solid #272727;
                 border-radius: 12px;
                 padding: 14px;
             }
@@ -63,7 +63,7 @@ class LiveMonitorCard(QWidget):
         header_layout = QHBoxLayout()
         self.badge_live = QLabel("🔴 MINERANDO AO VIVO")
         self.badge_live.setStyleSheet("""
-            background-color: #DC2626;
+            background-color: #CC0000;
             color: #FFFFFF;
             font-size: 11px;
             font-weight: 800;
@@ -74,7 +74,7 @@ class LiveMonitorCard(QWidget):
         header_layout.addWidget(self.badge_live)
 
         self.lbl_status = QLabel("Acompanhando fluxo de extração e análise de tráfego...")
-        self.lbl_status.setStyleSheet("color: #94A3B8; font-size: 11px; font-weight: 600;")
+        self.lbl_status.setStyleSheet("color: #AAAAAA; font-size: 11px; font-weight: 600;")
         header_layout.addWidget(self.lbl_status, 1)
 
         card_layout.addLayout(header_layout)
@@ -94,15 +94,15 @@ class LiveMonitorCard(QWidget):
         self.lbl_title.setWordWrap(True)
         self.lbl_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.lbl_title.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
-        self.lbl_title.setStyleSheet("color: #38BDF8; margin-top: 2px;")
+        self.lbl_title.setStyleSheet("color: #FFFFFF; margin-top: 2px;")
         card_layout.addWidget(self.lbl_title)
 
         # 4. Rich Video Details Matrix
         self.stats_frame = QFrame()
         self.stats_frame.setStyleSheet("""
             QFrame {
-                background-color: #0F172A;
-                border: 1px solid #1E293B;
+                background-color: #121212;
+                border: 1px solid #272727;
                 border-radius: 8px;
                 padding: 6px;
             }
@@ -114,36 +114,36 @@ class LiveMonitorCard(QWidget):
 
         # Col 0: Channel & Upload Date
         self.lbl_channel = QLabel("📺 Canal: --")
-        self.lbl_channel.setStyleSheet("color: #E2E8F0; font-size: 11px; font-weight: 700;")
+        self.lbl_channel.setStyleSheet("color: #F1F1F1; font-size: 11px; font-weight: 700;")
         stats_grid.addWidget(self.lbl_channel, 0, 0)
 
         self.lbl_pubdate = QLabel("📅 Envio: --")
-        self.lbl_pubdate.setStyleSheet("color: #94A3B8; font-size: 11px;")
+        self.lbl_pubdate.setStyleSheet("color: #AAAAAA; font-size: 11px;")
         stats_grid.addWidget(self.lbl_pubdate, 1, 0)
 
         # Col 1: Total Views & 90-Day Views
         self.lbl_views_tot = QLabel("👁️ Total Views: --")
-        self.lbl_views_tot.setStyleSheet("color: #38BDF8; font-size: 11px; font-weight: 700;")
+        self.lbl_views_tot.setStyleSheet("color: #F1F1F1; font-size: 11px; font-weight: 700;")
         stats_grid.addWidget(self.lbl_views_tot, 0, 1)
 
         self.lbl_views_90d = QLabel("⚡ Views 90d: --")
-        self.lbl_views_90d.setStyleSheet("color: #8B5CF6; font-size: 11px; font-weight: 700;")
+        self.lbl_views_90d.setStyleSheet("color: #AAAAAA; font-size: 11px; font-weight: 700;")
         stats_grid.addWidget(self.lbl_views_90d, 1, 1)
 
         # Col 2: VPH Velocity & Daily Traffic
         self.lbl_vph = QLabel("⏱️ VPH: --")
-        self.lbl_vph.setStyleSheet("color: #F59E0B; font-size: 11px; font-weight: 800;")
+        self.lbl_vph.setStyleSheet("color: #F1F1F1; font-size: 11px; font-weight: 800;")
         stats_grid.addWidget(self.lbl_vph, 0, 2)
 
         self.lbl_daily = QLabel("🔥 Tráfego: --")
-        self.lbl_daily.setStyleSheet("color: #10B981; font-size: 11px; font-weight: 800;")
+        self.lbl_daily.setStyleSheet("color: #4ADE80; font-size: 11px; font-weight: 800;")
         stats_grid.addWidget(self.lbl_daily, 1, 2)
 
         card_layout.addWidget(self.stats_frame)
 
         # 5. Discovered Domains Badge Bar
         self.lbl_domains_badge = QLabel("💎 Oportunidades: Nenhuma nesta varredura")
-        self.lbl_domains_badge.setStyleSheet("color: #CBD5E1; font-size: 11px; font-weight: 600; text-align: center;")
+        self.lbl_domains_badge.setStyleSheet("color: #AAAAAA; font-size: 11px; font-weight: 600; text-align: center;")
         self.lbl_domains_badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
         card_layout.addWidget(self.lbl_domains_badge)
 
@@ -156,15 +156,16 @@ class LiveMonitorCard(QWidget):
         self.btn_play_internal.setObjectName("btn_monitor_play")
         self.btn_play_internal.setStyleSheet("""
             QPushButton#btn_monitor_play {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #2563EB, stop:1 #1D4ED8);
+                background-color: #CC0000;
                 color: #FFFFFF;
                 font-weight: 800;
                 font-size: 12px;
                 padding: 7px 16px;
                 border-radius: 6px;
+                border: 1px solid #FF0000;
             }
             QPushButton#btn_monitor_play:hover {
-                background: #3B82F6;
+                background-color: #E60000;
             }
         """)
         self.btn_play_internal.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
@@ -175,16 +176,16 @@ class LiveMonitorCard(QWidget):
         self.btn_open_external.setObjectName("btn_monitor_ext")
         self.btn_open_external.setStyleSheet("""
             QPushButton#btn_monitor_ext {
-                background-color: #1E293B;
-                color: #38BDF8;
-                border: 1px solid #334155;
+                background-color: #272727;
+                color: #F1F1F1;
+                border: 1px solid #383838;
                 font-weight: 700;
                 font-size: 12px;
                 padding: 7px 16px;
                 border-radius: 6px;
             }
             QPushButton#btn_monitor_ext:hover {
-                background-color: #0284C7;
+                background-color: #3F3F3F;
                 color: #FFFFFF;
             }
         """)
@@ -270,23 +271,23 @@ class BrowserView(QWidget):
         # 1. Top Live Status Bar (Real-Time HUD)
         self.live_status_bar = QFrame()
         self.live_status_bar.setObjectName("browser_live_bar")
-        self.live_status_bar.setStyleSheet("background-color: #0F172A; border-bottom: 1px solid #222F44; padding: 4px 10px;")
+        self.live_status_bar.setStyleSheet("background-color: #181818; border-bottom: 1px solid #272727; padding: 4px 10px;")
         live_layout = QHBoxLayout(self.live_status_bar)
         live_layout.setContentsMargins(8, 3, 8, 3)
         live_layout.setSpacing(10)
 
         self.lbl_live_badge = QLabel("🌐 NAVEGADOR & MONITOR")
-        self.lbl_live_badge.setStyleSheet("color: #38BDF8; font-weight: 800; font-size: 11px; letter-spacing: 0.5px;")
+        self.lbl_live_badge.setStyleSheet("color: #FFFFFF; font-weight: 800; font-size: 11px; letter-spacing: 0.5px;")
         live_layout.addWidget(self.lbl_live_badge)
 
         self.lbl_live_title = QLabel("Pronto para navegação ou acompanhamento ao vivo.")
-        self.lbl_live_title.setStyleSheet("color: #94A3B8; font-weight: 600; font-size: 12px;")
+        self.lbl_live_title.setStyleSheet("color: #AAAAAA; font-weight: 600; font-size: 12px;")
         live_layout.addWidget(self.lbl_live_title, 1)
 
         # Follow Live Stream Checkbox
         self.chk_follow_live = QCheckBox("🔴 Acompanhar Varredura em Tempo Real")
         self.chk_follow_live.setChecked(True)
-        self.chk_follow_live.setStyleSheet("color: #38BDF8; font-weight: 700; font-size: 11px;")
+        self.chk_follow_live.setStyleSheet("color: #F1F1F1; font-weight: 700; font-size: 11px;")
         self.chk_follow_live.toggled.connect(self._on_follow_live_toggled)
         live_layout.addWidget(self.chk_follow_live)
 
@@ -294,16 +295,16 @@ class BrowserView(QWidget):
         self.btn_view_mode = QPushButton("🌐 Abrir Navegador Web Completo")
         self.btn_view_mode.setStyleSheet("""
             QPushButton {
-                background-color: #1E293B;
-                color: #38BDF8;
-                border: 1px solid #334155;
+                background-color: #272727;
+                color: #F1F1F1;
+                border: 1px solid #383838;
                 font-weight: 700;
                 font-size: 11px;
                 padding: 4px 10px;
                 border-radius: 4px;
             }
             QPushButton:hover {
-                background-color: #0284C7;
+                background-color: #3F3F3F;
                 color: #FFFFFF;
             }
         """)

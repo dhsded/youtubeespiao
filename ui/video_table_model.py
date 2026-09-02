@@ -56,7 +56,7 @@ class AsyncThumbnailLabel(QLabel):
         self.target_width = width
         self.target_height = height
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.setStyleSheet("background-color: #0F172A; border-radius: 6px;")
+        self.setStyleSheet("background-color: #181818; border-radius: 6px;")
         self.setFixedSize(self.target_width, self.target_height)
         if AsyncThumbnailLabel._network_manager is None:
             AsyncThumbnailLabel._network_manager = QNetworkAccessManager()
@@ -517,7 +517,7 @@ class AssociatedVideosDialog(QDialog):
         # Header Info Card
         header_card = QFrame()
         header_card.setObjectName("card")
-        header_card.setStyleSheet("background-color: #131B2A; border: 1px solid #222F44; border-radius: 8px; padding: 10px;")
+        header_card.setStyleSheet("background-color: #181818; border: 1px solid #272727; border-radius: 8px; padding: 10px;")
         h_layout = QHBoxLayout(header_card)
 
         lbl_icon = QLabel("🎬")
@@ -525,10 +525,10 @@ class AssociatedVideosDialog(QDialog):
         h_layout.addWidget(lbl_icon)
 
         v_info = QVBoxLayout()
-        lbl_dom = QLabel(f"Domínio / Link: <span style='color: #38BDF8; font-weight: 800;'>{self.domain_name}</span>")
+        lbl_dom = QLabel(f"Domínio / Link: <span style='color: #FFFFFF; font-weight: 800;'>{self.domain_name}</span>")
         lbl_dom.setStyleSheet("font-size: 14px; font-weight: 600;")
         lbl_count = QLabel(f"Encontrado em <b>{len(self.associated_videos)}</b> vídeo(s) no YouTube")
-        lbl_count.setStyleSheet("color: #94A3B8; font-size: 12px;")
+        lbl_count.setStyleSheet("color: #AAAAAA; font-size: 12px;")
         v_info.addWidget(lbl_dom)
         v_info.addWidget(lbl_count)
         h_layout.addLayout(v_info)
@@ -624,7 +624,7 @@ class AssociatedVideosDialog(QDialog):
         # Bottom Bar
         bottom_layout = QHBoxLayout()
         lbl_hint = QLabel("💡 Dica: Você pode abrir múltiplos vídeos ou filtrá-los na tabela principal de mineração.")
-        lbl_hint.setStyleSheet("color: #94A3B8; font-size: 11px;")
+        lbl_hint.setStyleSheet("color: #AAAAAA; font-size: 11px;")
         bottom_layout.addWidget(lbl_hint)
         bottom_layout.addStretch()
 
@@ -1268,9 +1268,9 @@ class DomainTableView(QWidget):
             btn_exclude.setToolTip(f"Adicionar '{display_name}' à lista de exclusão (ignorar para sempre)")
             btn_exclude.setStyleSheet("""
                 QPushButton {
-                    background-color: #1E293B;
+                    background-color: #272727;
                     color: #EF4444;
-                    border: 1px solid #475569;
+                    border: 1px solid #383838;
                     font-weight: 800;
                     font-size: 11px;
                     padding: 2px 6px;

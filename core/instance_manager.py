@@ -17,87 +17,87 @@ from typing import Optional, Dict
 
 logger = logging.getLogger("InstanceManager")
 
-# 10 Distinct, High-Contrast Color Themes for Instances
+# 10 Clean, Refined Accent Tones for Instances (YouTube Studio Aesthetic)
 INSTANCE_COLORS = [
     {
-        "name": "Vermelho Carmim",
-        "start": "#DC2626",
-        "end": "#EF4444",
-        "border": "#F87171",
+        "name": "YouTube Red",
+        "start": "#CC0000",
+        "end": "#E50914",
+        "border": "#FF4D4D",
         "text": "#FFFFFF",
-        "tray": "#EF4444"
+        "tray": "#CC0000"
     },  # Instância #1
     {
-        "name": "Azul Royal",
-        "start": "#1D4ED8",
-        "end": "#3B82F6",
-        "border": "#60A5FA",
+        "name": "Studio Blue",
+        "start": "#065FD4",
+        "end": "#1A73E8",
+        "border": "#4285F4",
         "text": "#FFFFFF",
-        "tray": "#3B82F6"
+        "tray": "#065FD4"
     },  # Instância #2
     {
-        "name": "Verde Esmeralda",
-        "start": "#047857",
-        "end": "#10B981",
-        "border": "#34D399",
+        "name": "Studio Emerald",
+        "start": "#0E8345",
+        "end": "#137333",
+        "border": "#34A853",
         "text": "#FFFFFF",
-        "tray": "#10B981"
+        "tray": "#0E8345"
     },  # Instância #3
     {
-        "name": "Âmbar / Laranja",
-        "start": "#D97706",
-        "end": "#F59E0B",
-        "border": "#FBBF24",
+        "name": "Studio Amber",
+        "start": "#B25000",
+        "end": "#E37400",
+        "border": "#FBBC04",
         "text": "#FFFFFF",
-        "tray": "#F59E0B"
+        "tray": "#B25000"
     },  # Instância #4
     {
-        "name": "Roxo Violeta",
-        "start": "#7C3AED",
-        "end": "#8B5CF6",
-        "border": "#A78BFA",
+        "name": "Studio Indigo",
+        "start": "#5E35B1",
+        "end": "#7E57C2",
+        "border": "#9575CD",
         "text": "#FFFFFF",
-        "tray": "#8B5CF6"
+        "tray": "#5E35B1"
     },  # Instância #5
     {
-        "name": "Ciano Oceano",
-        "start": "#0E7490",
-        "end": "#06B6D4",
-        "border": "#22D3EE",
+        "name": "Studio Teal",
+        "start": "#00796B",
+        "end": "#00897B",
+        "border": "#26A69A",
         "text": "#FFFFFF",
-        "tray": "#06B6D4"
+        "tray": "#00796B"
     },  # Instância #6
     {
-        "name": "Rosa Magenta",
-        "start": "#BE185D",
-        "end": "#EC4899",
-        "border": "#F472B6",
+        "name": "Studio Crimson",
+        "start": "#AD1457",
+        "end": "#C2185B",
+        "border": "#EC407A",
         "text": "#FFFFFF",
-        "tray": "#EC4899"
+        "tray": "#AD1457"
     },  # Instância #7
     {
-        "name": "Lima Neon",
-        "start": "#4D7C0F",
-        "end": "#84CC16",
-        "border": "#A3E635",
+        "name": "Studio Cyan",
+        "start": "#00838F",
+        "end": "#0097A7",
+        "border": "#26C6DA",
         "text": "#FFFFFF",
-        "tray": "#84CC16"
+        "tray": "#00838F"
     },  # Instância #8
     {
-        "name": "Índigo Profundo",
-        "start": "#4338CA",
-        "end": "#6366F1",
-        "border": "#818CF8",
+        "name": "Studio Slate",
+        "start": "#374151",
+        "end": "#4B5563",
+        "border": "#6B7280",
         "text": "#FFFFFF",
-        "tray": "#6366F1"
+        "tray": "#4B5563"
     },  # Instância #9
     {
-        "name": "Ouro Dourado",
-        "start": "#B45309",
-        "end": "#EAB308",
-        "border": "#FDE047",
+        "name": "Studio Bronze",
+        "start": "#8D6E63",
+        "end": "#A1887F",
+        "border": "#BCAAA4",
         "text": "#FFFFFF",
-        "tray": "#EAB308"
+        "tray": "#8D6E63"
     },  # Instância #10
 ]
 
@@ -212,3 +212,33 @@ class InstanceManager:
     @classmethod
     def get_instance_number(cls) -> int:
         return cls._instance_number
+
+    @classmethod
+    def spawn_new_instance(cls) -> bool:
+        """
+        Spawns a new independent instance of the application in the background.
+        Works seamlessly both when running from Python source (main.py) and from compiled PyInstaller EXE.
+        """
+        import subprocess
+        try:
+            flags = 0
+            if sys.platform == "win32":
+                flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+
+            if getattr(sys, "frozen", False):
+                # Running as compiled PyInstaller executable
+                exe_path = sys.executable
+                subprocess.Popen([exe_path], creationflags=flags, close_fds=True)
+            else:
+                # Running from Python source
+                script_path = os.path.abspath(sys.argv[0])
+                if not script_path.endswith("main.py"):
+                    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                    script_path = os.path.join(base_dir, "main.py")
+                subprocess.Popen([sys.executable, script_path], creationflags=flags, close_fds=True)
+
+            logger.info("Successfully spawned new application instance process.")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to spawn new application instance: {e}")
+            return False

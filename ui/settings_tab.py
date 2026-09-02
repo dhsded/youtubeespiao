@@ -68,16 +68,16 @@ class SettingsTab(QWidget):
         g_layout.setSpacing(8)
 
         lbl_desc = QLabel("Domínios abaixo são ignorados automaticamente para focar apenas em domínios comerciais e próprios (um por linha):")
-        lbl_desc.setStyleSheet("color: #94A3B8; font-size: 12px;")
+        lbl_desc.setStyleSheet("color: #AAAAAA; font-size: 12px;")
         g_layout.addWidget(lbl_desc)
 
         self.txt_ignored = QPlainTextEdit()
         self.txt_ignored.setPlainText("\n".join(sorted(IGNORE_DOMAINS)))
-        self.txt_ignored.setStyleSheet("background-color: #0F172A; color: #E2E8F0; font-family: 'Consolas', monospace;")
+        self.txt_ignored.setStyleSheet("background-color: #121212; color: #F1F1F1; font-family: 'Consolas', monospace;")
         g_layout.addWidget(self.txt_ignored)
 
         btn_save_all = QPushButton("💾 Salvar Todas as Configurações")
-        btn_save_all.setObjectName("btn_primary")
+        btn_save_all.setObjectName("btn_start_action")
         btn_save_all.clicked.connect(self._save_settings)
         g_layout.addWidget(btn_save_all)
 

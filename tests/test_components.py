@@ -7,6 +7,7 @@ import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 import unittest
+from unittest.mock import patch, MagicMock
 from datetime import datetime, timezone, timedelta
 from core.metrics_calculator import calculate_video_metrics, format_number
 from core.domain_extractor import DomainExtractor
@@ -568,6 +569,13 @@ class TestYoutubeEspiaoCore(unittest.TestCase):
         self.assertIn("start", c1)
         self.assertIn("tray", c1)
         self.assertNotEqual(c1["start"], c2["start"])
+
+        # Test spawn_new_instance with mock
+        with unittest.mock.patch("subprocess.Popen") as mock_popen:
+            mock_popen.return_value = unittest.mock.MagicMock()
+            spawned = InstanceManager.spawn_new_instance()
+            self.assertTrue(spawned)
+            self.assertTrue(mock_popen.called)
 
         InstanceManager.release_instance()
 

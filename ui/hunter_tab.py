@@ -538,20 +538,6 @@ class HunterTab(QWidget):
         self.btn_batch_txt.setObjectName("btn_batch_action")
         self.btn_batch_txt.setToolTip("Carregar arquivo .txt com termos por linha para abrir múltiplas instâncias e minerar automaticamente.")
         self.btn_batch_txt.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        self.btn_batch_txt.setStyleSheet("""
-            QPushButton#btn_batch_action {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #0369A1, stop:1 #0284C7);
-                color: #FFFFFF;
-                font-weight: 700;
-                font-size: 11px;
-                padding: 4px 10px;
-                border-radius: 6px;
-                border: 1px solid #38BDF8;
-            }
-            QPushButton#btn_batch_action:hover {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #0284C7, stop:1 #38BDF8);
-            }
-        """)
         self.btn_batch_txt.clicked.connect(self._load_batch_txt_file)
         row1.addWidget(self.btn_batch_txt)
 

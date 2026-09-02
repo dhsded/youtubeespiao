@@ -29,11 +29,11 @@ class HelpDialog(QDialog):
         # Header Title Frame
         header_frame = QFrame()
         if self.is_dark_mode:
-            header_frame.setStyleSheet("background-color: #1E293B; border: 1px solid #334155; border-radius: 8px; padding: 10px 16px;")
-            title_color = "#38BDF8"
+            header_frame.setStyleSheet("background-color: #181818; border: 1px solid #272727; border-radius: 8px; padding: 10px 16px;")
+            title_color = "#FFFFFF"
         else:
-            header_frame.setStyleSheet("background-color: #F8FAFC; border: 1px solid #CBD5E1; border-radius: 8px; padding: 10px 16px;")
-            title_color = "#0284C7"
+            header_frame.setStyleSheet("background-color: #FFFFFF; border: 1px solid #E5E5E5; border-radius: 8px; padding: 10px 16px;")
+            title_color = "#0F0F0F"
 
         h_layout = QHBoxLayout(header_frame)
         h_layout.setContentsMargins(0, 0, 0, 0)
