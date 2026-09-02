@@ -31,7 +31,7 @@ class MainWindow(QMainWindow):
     def __init__(self, initial_target: Optional[str] = None, autostart: bool = False):
         super().__init__()
         self.instance_number = InstanceManager.get_instance_number()
-        self.setWindowTitle(f"YouTube Espião v3.0.0 #{self.instance_number} — Rastreador de Domínios Expirados")
+        self.setWindowTitle(f"YouTube Espião v3.2.0 #{self.instance_number} — Rastreador de Domínios Expirados")
         self.resize(1380, 890)
         self.setMinimumSize(1040, 700)
         
@@ -158,7 +158,7 @@ class MainWindow(QMainWindow):
         self.btn_close_app.clicked.connect(self._force_quit)
         header_layout.addWidget(self.btn_close_app)
 
-        lbl_version = QLabel("v3.0.0")
+        lbl_version = QLabel("v3.2.0")
         lbl_version.setObjectName("header_version")
         header_layout.addWidget(lbl_version)
 
