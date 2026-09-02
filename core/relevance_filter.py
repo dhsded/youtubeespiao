@@ -94,16 +94,13 @@ def get_youtube_related_suggestions(
     suggestions: List[str] = []
     seen = set()
 
-    # Query variations for broader niche harvesting
+    # Query variations for broader niche harvesting (primary keyword fetched first)
     queries_to_fetch = [
         keyword,
         f"{keyword} como",
         f"{keyword} tutorial",
-        f"{keyword} do zero",
         f"{keyword} dicas",
-        f"{keyword} curso",
-        f"{keyword} melhor",
-        f"{keyword} 2026"
+        f"{keyword} melhor"
     ]
 
     headers = {
@@ -111,14 +108,17 @@ def get_youtube_related_suggestions(
         "Accept-Language": f"{hl}-{gl},{hl};q=0.9,en;q=0.8"
     }
 
-    for q in queries_to_fetch:
+    for idx, q in enumerate(queries_to_fetch):
         if len(suggestions) >= max_suggestions:
+            break
+        # If we already have 10+ suggestions from primary queries, skip further network calls for instant startup
+        if idx >= 2 and len(suggestions) >= 12:
             break
         try:
             encoded_q = urllib.parse.quote(q)
             # YouTube DS endpoint (Firefox client format returns [query, [sug1, sug2, ...]])
             url_ff = f"https://suggestqueries.google.com/complete/search?client=firefox&ds=yt&q={encoded_q}&hl={hl}&gl={gl}"
-            resp = requests.get(url_ff, headers=headers, timeout=2.5)
+            resp = requests.get(url_ff, headers=headers, timeout=1.2)
             if resp.status_code == 200:
                 data = resp.json()
                 if isinstance(data, list) and len(data) > 1 and isinstance(data[1], list):
@@ -131,6 +131,9 @@ def get_youtube_related_suggestions(
                                 suggestions.append(clean_item)
         except Exception as e:
             logger.debug(f"YouTube Suggestion fetch failed for '{q}': {e}")
+            # If network error on primary, break early to avoid delay
+            if idx == 0:
+                break
 
     # If API had temporary network limit or returned few, add structured intent variants
     if len(suggestions) < 5:
