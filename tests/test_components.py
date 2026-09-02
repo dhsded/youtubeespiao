@@ -975,7 +975,7 @@ class TestYoutubeEspiaoCore(unittest.TestCase):
         self.assertIn("audit_detected", res)
 
     def test_on_demand_vph_service(self):
-        """Test on-demand VPH service, local throttling, multi-scenario lazy anchoring, and traffic classification."""
+        """Test on-demand VPH service, Wayback Cold-Start, Likes correlation, Cache mutation, and Weighted Confidence Score."""
         from core.vph_service import VPHService, VideoVPHResponse
         from datetime import datetime, timezone, timedelta
         import time
@@ -984,76 +984,125 @@ class TestYoutubeEspiaoCore(unittest.TestCase):
         service._anchors_db.clear()
         v_id = "test_vph_ondemand_01"
 
-        # Mock fetcher to simulate deterministic view returns
+        # Mock fetcher to simulate deterministic view & like returns
         mock_views = 50000
+        mock_likes = 1200
         mock_pub = "2023-01-01T00:00:00Z"
         mock_provider = "innertube"
+        mock_mutation = False
 
         def mock_fetch(vid):
-            return mock_views, mock_pub, mock_provider
+            return mock_views, mock_likes, mock_pub, mock_provider, mock_mutation
 
         service.fetcher.fetch_exact_video_details = mock_fetch
 
-        # 1. Cold Start (Scenario A): First query
+        # 1. Cold Start (Scenario A): First query (without Wayback)
         resp1 = service.get_on_demand_vph(v_id, force_refresh=True)
         self.assertEqual(resp1["videoId"], v_id)
         self.assertEqual(resp1["exactViews"], 50000)
+        self.assertEqual(resp1["likeCount"], 1200)
         self.assertEqual(resp1["confidence"], "lifetime_fallback")
+        self.assertFalse(resp1["waybackResolved"])
         self.assertFalse(resp1["auditDetected"])
         self.assertEqual(resp1["providerUsed"], "innertube")
+        self.assertLessEqual(resp1["confidenceScore"], 40)
         self.assertIn("calculatedAt", resp1)
+
+        # 1b. Cold Start WITH Wayback Machine capture (e.g. captured 3 days ago with 48,000 views)
+        v_id_wb = "test_vph_wayback_99"
+        service._anchors_db.pop(v_id_wb, None)
+        
+        # Monkeypatch fetch_wayback_anchor for this test
+        import core.vph_service
+        orig_fetch_wb = core.vph_service.fetch_wayback_anchor
+        core.vph_service.fetch_wayback_anchor = lambda vid, timeout=2.5: (48000, time.time() - (72 * 3600.0)) # 3 days ago
+
+        try:
+            resp_wb = service.get_on_demand_vph(v_id_wb, force_refresh=True)
+            self.assertTrue(resp_wb["waybackResolved"])
+            self.assertEqual(resp_wb["confidence"], "medium")
+            # (50,000 - 48,000) / 72h = ~27.78 VPH
+            self.assertAlmostEqual(resp_wb["vph"], 27.78, delta=1.0)
+            self.assertGreater(resp_wb["confidenceScore"], 40)
+        finally:
+            core.vph_service.fetch_wayback_anchor = orig_fetch_wb
 
         # 2. Local Throttling (< 15 mins): Returns cached result immediately with providerUsed = "local_cache"
         resp2 = service.get_on_demand_vph(v_id, force_refresh=False)
         self.assertEqual(resp2["providerUsed"], "local_cache")
         self.assertEqual(resp2["exactViews"], 50000)
 
-        # 3. Re-access with Delta >= 1 hour (Scenario B): Steady traffic (+300 views in 2 hours -> 150 VPH)
+        # 3. Re-access with Delta >= 1 hour (Scenario B): Steady traffic (+300 views, +15 likes in 2 hours -> 150 VPH)
         service._anchors_db[v_id]["anchor_ts"] = time.time() - 7200.0 # 2 hours ago
         service._anchors_db[v_id]["anchor_views"] = 50000
+        service._anchors_db[v_id]["anchor_likes"] = 1200
         service._anchors_db[v_id]["last_fetch_ts"] = time.time() - 7200.0
         mock_views = 50300
+        mock_likes = 1215
+        mock_mutation = True # Cache mutation active (|playerViews - schemaViews| > 0)
 
         resp3 = service.get_on_demand_vph(v_id, force_refresh=True)
         self.assertEqual(resp3["confidence"], "high")
         self.assertAlmostEqual(resp3["vph"], 150.0, delta=1.0)
         self.assertEqual(resp3["trafficStatus"], "active")
+        self.assertTrue(resp3["organicEngagementVerified"])
+        self.assertTrue(resp3["cacheMutationActive"])
+        self.assertEqual(resp3["confidenceScore"], 100) # 30 + 30 (1-24h) + 20 (likes) + 10 (mutation) + 10 (innertube) = 100
         self.assertFalse(resp3["auditDetected"])
 
-        # 4. YouTube Audit Detection: Negative Delta in >= 1h (views removed: 50,300 -> 49,000)
+        # 4. YouTube Audit Detection: Negative Delta in >= 1h (views removed: 50,300 -> 49,000) -> Score = 0
         service._anchors_db[v_id]["anchor_ts"] = time.time() - 3650.0
         service._anchors_db[v_id]["anchor_views"] = 50300
+        service._anchors_db[v_id]["anchor_likes"] = 1215
         service._anchors_db[v_id]["last_fetch_ts"] = time.time() - 3650.0
         mock_views = 49000
+        mock_likes = 1215
 
         resp4 = service.get_on_demand_vph(v_id, force_refresh=True)
         self.assertEqual(resp4["vph"], 0.0)
         self.assertTrue(resp4["auditDetected"])
-        self.assertEqual(resp4["confidence"], "high")
+        self.assertEqual(resp4["confidenceScore"], 0) # Audit penalty zeros score
 
-        # 5. Re-access between 15 and 60 minutes (Scenario C):
-        # 5a. Positive delta (+100 views in 30 min -> 200 VPH)
-        service._anchors_db[v_id]["anchor_ts"] = time.time() - 1800.0 # 30 min ago
+        # 5. Severe Engagement Anomaly: +600 views in 2h with 0 likes -> penalized score
+        service._anchors_db[v_id]["anchor_ts"] = time.time() - 7200.0
         service._anchors_db[v_id]["anchor_views"] = 49000
+        service._anchors_db[v_id]["anchor_likes"] = 1215
+        service._anchors_db[v_id]["last_fetch_ts"] = time.time() - 7200.0
+        mock_views = 49600
+        mock_likes = 1215 # 0 delta likes
+        mock_mutation = False
+
+        resp5 = service.get_on_demand_vph(v_id, force_refresh=True)
+        self.assertFalse(resp5["organicEngagementVerified"])
+        # Score = 30 + 30 (1-24h) + 10 (innertube) - 25 (anomaly penalty) = 45
+        self.assertEqual(resp5["confidenceScore"], 45)
+
+        # 6. Re-access between 15 and 60 minutes (Scenario C):
+        # 6a. Positive delta (+100 views, +5 likes in 30 min -> 200 VPH)
+        service._anchors_db[v_id]["anchor_ts"] = time.time() - 1800.0 # 30 min ago
+        service._anchors_db[v_id]["anchor_views"] = 49600
+        service._anchors_db[v_id]["anchor_likes"] = 1215
         service._anchors_db[v_id]["last_fetch_ts"] = time.time() - 1800.0
-        mock_views = 49100
+        mock_views = 49700
+        mock_likes = 1220
 
-        resp5a = service.get_on_demand_vph(v_id, force_refresh=True)
-        self.assertEqual(resp5a["confidence"], "medium")
-        self.assertAlmostEqual(resp5a["vph"], 200.0, delta=2.0)
+        resp6a = service.get_on_demand_vph(v_id, force_refresh=True)
+        self.assertEqual(resp6a["confidence"], "medium")
+        self.assertAlmostEqual(resp6a["vph"], 200.0, delta=2.0)
+        self.assertTrue(resp6a["organicEngagementVerified"])
 
-        # 5b. Same views (CDN batch delay -> preserve previous VPH)
+        # 6b. Same views (CDN batch delay -> preserve previous VPH)
         service._anchors_db[v_id]["anchor_ts"] = time.time() - 1800.0
-        service._anchors_db[v_id]["anchor_views"] = 49100
+        service._anchors_db[v_id]["anchor_views"] = 49700
         service._anchors_db[v_id]["last_vph"] = 200.0
         service._anchors_db[v_id]["last_fetch_ts"] = time.time() - 1800.0
-        mock_views = 49100
+        mock_views = 49700
 
-        resp5b = service.get_on_demand_vph(v_id, force_refresh=True)
-        self.assertEqual(resp5b["confidence"], "medium")
-        self.assertEqual(resp5b["vph"], 200.0)
+        resp6b = service.get_on_demand_vph(v_id, force_refresh=True)
+        self.assertEqual(resp6b["confidence"], "medium")
+        self.assertEqual(resp6b["vph"], 200.0)
 
-        # 6. Traffic Classification Rules
+        # 7. Traffic Classification Rules
         now = datetime.now(timezone.utc)
         old_pub = now - timedelta(days=200)
         new_pub = now - timedelta(days=30)

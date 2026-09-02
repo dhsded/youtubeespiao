@@ -1,15 +1,19 @@
 """
-High-Resilience On-Demand VPH (Views Per Hour) Service & Multi-Source Ingestion Engine.
-Operates without YouTube Data API keys using a cascade fallback architecture:
-1. InnerTube API (Direct, fast, mobile/web client emulation)
+High-Precision On-Demand VPH (Views Per Hour) Service & Statistical Multi-Source Engine.
+Operates strictly without YouTube Data API keys using a cascade fallback architecture:
+1. YouTube InnerTube API (Direct mobile/web client emulation)
 2. Invidious Public Proxy Pool (Rotating external IP shield)
-3. Minimalist HTML / Embed Fallback (Regex-based exact integer extraction)
+3. Minimalist HTML / Embed Fallback (Regex-based exact integer extraction + Schema.org comparison)
 
 Features:
+- Cold Start Historical Resolution via Wayback Machine (Internet Archive CDX API)
+- Traffic Legitimacy & Anomaly Validation (ΔViews vs ΔLikes correlation)
+- Active CDN Cache Mutation Verification (|playerViews - schemaViews| > 0)
+- Weighted Confidence Scoring Algorithm (0 to 100%)
 - Local Throttling Cache (15-minute anti-ban / performance protection)
 - Lazy Anchoring VPH Engine (Cold start, >=1h delta, 15-60m proportional delta, negative audit detection)
 - Automated Traffic Classification ('viral_spike' | 'active' | 'evergreen' | 'dormant')
-- Strictly conforms to the VideoVPHResponse typed contract
+- Strictly conforms to the updated VideoVPHResponse contract
 """
 
 import os
@@ -17,7 +21,6 @@ import re
 import json
 import time
 import logging
-import urllib.parse
 from datetime import datetime, timezone, timedelta
 from typing import Dict, Any, Optional, Tuple, List, Literal, TypedDict
 import requests
@@ -28,12 +31,17 @@ logger = logging.getLogger(__name__)
 class VideoVPHResponse(TypedDict):
     videoId: str
     exactViews: int
+    likeCount: int
     publishedAt: str
     vph: float
     trafficStatus: Literal['viral_spike', 'active', 'evergreen', 'dormant']
-    confidence: Literal['high', 'medium', 'lifetime_fallback']
-    providerUsed: Literal['innertube', 'invidious_proxy', 'embed_fallback', 'local_cache']
+    confidence: Literal['high', 'medium', 'low', 'lifetime_fallback']
+    confidenceScore: int # 0 to 100
+    waybackResolved: bool
+    cacheMutationActive: bool
     auditDetected: bool
+    organicEngagementVerified: bool
+    providerUsed: Literal['innertube', 'invidious_proxy', 'embed_fallback', 'local_cache']
     deltaHours: float
     calculatedAt: str
 
@@ -60,7 +68,8 @@ def _get_vph_cache_filepath() -> str:
 
 class MultiSourceVideoFetcher:
     """
-    Resilient Multi-Source Fetcher for exact YouTube video view counts and publication dates.
+    Resilient Multi-Source Fetcher for exact YouTube video view counts, like counts,
+    publication dates, and CDN cache mutation checks.
     Operates without API keys using a 3-tier cascade fallback.
     """
 
@@ -73,14 +82,15 @@ class MultiSourceVideoFetcher:
         })
         self._invidious_idx = 0
 
-    def fetch_from_innertube(self, video_id: str) -> Optional[Tuple[int, str]]:
+    def fetch_from_innertube(self, video_id: str) -> Optional[Tuple[int, int, str]]:
         """
         Level 1: YouTube InnerTube API (Direct, Fast, No API Key).
-        Emulates YouTube Client to retrieve exact unrounded viewCount.
+        Emulates YouTube Client to retrieve exact unrounded viewCount and likeCount.
+        Returns: (exact_views, like_count, published_at)
         """
         url = "https://www.youtube.com/youtubei/v1/player?prettyPrint=false"
         
-        # Primary attempt: Web client (high reliability for exact integer viewCount)
+        # Primary attempt: Web client context
         payload_web = {
             "context": {
                 "client": {
@@ -107,9 +117,15 @@ class MultiSourceVideoFetcher:
                 vc_raw = vd.get("viewCount")
                 if vc_raw is not None:
                     exact_views = int(vc_raw)
+                    
+                    # Extract likeCount
+                    raw_text = resp.text
+                    likes_match = re.findall(r'"likeCount"\s*:\s*"(\d+)"', raw_text) or re.findall(r'"likeCount"\s*:\s*(\d+)', raw_text)
+                    like_count = int(likes_match[0]) if likes_match else 0
+                    
                     mf = data.get("microformat", {}).get("playerMicroformatRenderer", {})
                     pub_date = mf.get("publishDate") or mf.get("uploadDate") or vd.get("publishDate") or ""
-                    return exact_views, str(pub_date)
+                    return exact_views, like_count, str(pub_date)
         except Exception as e:
             logger.debug(f"InnerTube Level 1 (WEB) exception for {video_id}: {e}")
 
@@ -141,18 +157,22 @@ class MultiSourceVideoFetcher:
                 vc_raw = vd.get("viewCount")
                 if vc_raw is not None:
                     exact_views = int(vc_raw)
+                    raw_text = resp_and.text
+                    likes_match = re.findall(r'"likeCount"\s*:\s*"(\d+)"', raw_text) or re.findall(r'"likeCount"\s*:\s*(\d+)', raw_text)
+                    like_count = int(likes_match[0]) if likes_match else 0
                     mf = data.get("microformat", {}).get("playerMicroformatRenderer", {})
                     pub_date = mf.get("publishDate") or mf.get("uploadDate") or vd.get("publishDate") or ""
-                    return exact_views, str(pub_date)
+                    return exact_views, like_count, str(pub_date)
         except Exception as e:
             logger.debug(f"InnerTube Level 1 (ANDROID) exception for {video_id}: {e}")
 
         return None
 
-    def fetch_from_invidious_proxy(self, video_id: str) -> Optional[Tuple[int, str]]:
+    def fetch_from_invidious_proxy(self, video_id: str) -> Optional[Tuple[int, int, str]]:
         """
         Level 2: Rotating Invidious Public Proxy Pool (External IP Shield).
         Requests to YouTube are executed by third-party instances, shielding our IP.
+        Returns: (exact_views, like_count, published_at)
         """
         pool_len = len(INVIDIOUS_INSTANCES_POOL)
         for attempt in range(pool_len):
@@ -167,85 +187,179 @@ class MultiSourceVideoFetcher:
                     if vc_raw is not None:
                         self._invidious_idx = (idx + 1) % pool_len
                         exact_views = int(vc_raw)
+                        likes_raw = data.get("likeCount", 0)
+                        like_count = int(likes_raw) if likes_raw else 0
                         pub_date = data.get("publishedText") or data.get("uploadDate") or str(data.get("published", ""))
-                        return exact_views, str(pub_date)
+                        return exact_views, like_count, str(pub_date)
             except Exception as e:
                 logger.debug(f"Invidious Level 2 instance {instance_url} failed: {e}")
                 continue
 
         return None
 
-    def fetch_from_embed_fallback(self, video_id: str) -> Optional[Tuple[int, str]]:
+    def fetch_from_embed_fallback(self, video_id: str) -> Tuple[Optional[int], Optional[int], Optional[str], bool]:
         """
-        Level 3: Minimalist Embed / Watch HTML Fallback.
-        Fetches HTML directly and extracts exact viewCount via Regex.
+        Level 3: Minimalist Embed / Watch HTML Fallback and Cache Mutation Check.
+        Extracts playerViews, schemaViews, and likes.
+        Returns: (exact_views, like_count, published_at, cache_mutation_active)
         """
-        # 1. Watch page initial data
+        player_views = None
+        schema_views = None
+        like_count = 0
+        pub_date = ""
+
+        # 1. Watch page
         try:
             watch_url = f"https://www.youtube.com/watch?v={video_id}"
             resp = self.session.get(watch_url, timeout=self.timeout)
             if resp.status_code == 200:
                 html = resp.text
-                vc_matches = re.findall(r'"viewCount"\s*:\s*"(\d+)"', html)
+                
+                # Player views
+                vc_matches = re.findall(r'"viewCount"\s*:\s*"(\d+)"', html) or re.findall(r'"viewCount"\s*:\s*(\d+)', html)
                 if vc_matches:
-                    exact_views = int(vc_matches[0])
-                    pub_matches = re.findall(r'"publishDate"\s*:\s*"([^"]+)"', html) or re.findall(r'"uploadDate"\s*:\s*"([^"]+)"', html)
-                    pub_date = pub_matches[0] if pub_matches else ""
-                    return exact_views, str(pub_date)
+                    player_views = int(vc_matches[0])
+                
+                # Schema views
+                schema_matches = re.findall(r'<meta\s+itemprop="interactionCount"\s+content="(\d+)"', html)
+                if schema_matches:
+                    schema_views = int(schema_matches[0])
+                else:
+                    # JSON-LD check
+                    json_ld = re.findall(r'"interactionCount"\s*:\s*"(\d+)"', html)
+                    if json_ld:
+                        schema_views = int(json_ld[0])
+
+                # Likes
+                likes_matches = re.findall(r'"likeCount"\s*:\s*"(\d+)"', html) or re.findall(r'"likeCount"\s*:\s*(\d+)', html)
+                if likes_matches:
+                    like_count = int(likes_matches[0])
+
+                # Publication date
+                pub_matches = re.findall(r'"publishDate"\s*:\s*"([^"]+)"', html) or re.findall(r'"uploadDate"\s*:\s*"([^"]+)"', html)
+                if pub_matches:
+                    pub_date = pub_matches[0]
         except Exception as e:
             logger.debug(f"Level 3 Watch fallback exception for {video_id}: {e}")
 
         # 2. Embed page fallback
-        try:
-            embed_url = f"https://www.youtube.com/embed/{video_id}"
-            resp_e = self.session.get(embed_url, timeout=self.timeout)
-            if resp_e.status_code == 200:
-                html_e = resp_e.text
-                vc_matches = re.findall(r'"viewCount"\s*:\s*"(\d+)"', html_e) or re.findall(r'\\\"viewCount\\\"\s*:\s*\\\"(\d+)\\\"', html_e)
-                if vc_matches:
-                    exact_views = int(vc_matches[0])
-                    return exact_views, ""
-        except Exception as e:
-            logger.debug(f"Level 3 Embed fallback exception for {video_id}: {e}")
+        if player_views is None:
+            try:
+                embed_url = f"https://www.youtube.com/embed/{video_id}"
+                resp_e = self.session.get(embed_url, timeout=self.timeout)
+                if resp_e.status_code == 200:
+                    html_e = resp_e.text
+                    vc_matches = re.findall(r'"viewCount"\s*:\s*"(\d+)"', html_e) or re.findall(r'\\\"viewCount\\\"\s*:\s*\\\"(\d+)\\\"', html_e)
+                    if vc_matches:
+                        player_views = int(vc_matches[0])
+                    schema_matches = re.findall(r'<meta\s+itemprop="interactionCount"\s+content="(\d+)"', html_e)
+                    if schema_matches:
+                        schema_views = int(schema_matches[0])
+            except Exception as e:
+                logger.debug(f"Level 3 Embed fallback exception for {video_id}: {e}")
 
-        return None
+        # Test active cache mutation: |playerViews - schemaViews| > 0
+        cache_mutation_active = False
+        if player_views is not None and schema_views is not None:
+            if abs(player_views - schema_views) > 0:
+                cache_mutation_active = True
 
-    def fetch_exact_video_details(self, video_id: str) -> Tuple[Optional[int], Optional[str], Optional[str]]:
+        exact_views = player_views if player_views is not None else schema_views
+        return exact_views, like_count, pub_date, cache_mutation_active
+
+    def fetch_exact_video_details(self, video_id: str) -> Tuple[Optional[int], int, Optional[str], Optional[str], bool]:
         """
         Cascading multi-source fetch:
-        Returns: (exact_views, published_at, provider_used)
+        Returns: (exact_views, like_count, published_at, provider_used, cache_mutation_active)
         """
         if not video_id:
-            return None, None, None
+            return None, 0, None, None, False
 
         # Level 1: InnerTube
         res_l1 = self.fetch_from_innertube(video_id)
         if res_l1 is not None:
-            return res_l1[0], res_l1[1], "innertube"
+            return res_l1[0], res_l1[1], res_l1[2], "innertube", False
 
         # Level 2: Invidious Proxy Pool
         res_l2 = self.fetch_from_invidious_proxy(video_id)
         if res_l2 is not None:
-            return res_l2[0], res_l2[1], "invidious_proxy"
+            return res_l2[0], res_l2[1], res_l2[2], "invidious_proxy", False
 
-        # Level 3: Embed Fallback
+        # Level 3: Embed Fallback & Cache Mutation Check
         res_l3 = self.fetch_from_embed_fallback(video_id)
-        if res_l3 is not None:
-            return res_l3[0], res_l3[1], "embed_fallback"
+        if res_l3[0] is not None:
+            return res_l3[0], res_l3[1], res_l3[2], "embed_fallback", res_l3[3]
 
-        return None, None, None
+        return None, 0, None, None, False
+
+
+def fetch_wayback_anchor(video_id: str, timeout: float = 2.5) -> Optional[Tuple[int, float]]:
+    """
+    Cold Start Historical Anchor Resolver using Wayback Machine (Internet Archive CDX API).
+    Searches for captures between 1 and 30 days old.
+    Returns: (archived_views, timestamp) or None
+    """
+    if not video_id:
+        return None
+
+    cdx_url = (
+        f"https://web.archive.org/cdx/search/cdx"
+        f"?url=youtube.com/watch?v={video_id}"
+        f"&output=json&fl=timestamp,statuscode&filter=statuscode:200&limit=-3"
+    )
+
+    try:
+        r = requests.get(cdx_url, timeout=timeout)
+        if r.status_code == 200:
+            data = r.json()
+            if len(data) > 1:
+                # rows after header
+                rows = data[1:]
+                now = datetime.now(timezone.utc)
+                
+                # Check from most recent capture backwards
+                for row in reversed(rows):
+                    ts_str = str(row[0]).strip()
+                    if len(ts_str) >= 14:
+                        try:
+                            dt = datetime(
+                                int(ts_str[0:4]), int(ts_str[4:6]), int(ts_str[6:8]),
+                                int(ts_str[8:10]), int(ts_str[10:12]), int(ts_str[12:14]),
+                                tzinfo=timezone.utc
+                            )
+                            age_days = (now - dt).total_seconds() / 86400.0
+                            if 1.0 <= age_days <= 30.0:
+                                # Fetch archived page snapshot
+                                snap_url = f"https://web.archive.org/web/{ts_str}id_/https://www.youtube.com/watch?v={video_id}"
+                                r_snap = requests.get(snap_url, timeout=timeout)
+                                if r_snap.status_code == 200:
+                                    m = (
+                                        re.findall(r'"viewCount"\s*:\s*"(\d+)"', r_snap.text) or
+                                        re.findall(r'"viewCount"\s*:\s*(\d+)', r_snap.text) or
+                                        re.findall(r'<meta\s+itemprop="interactionCount"\s+content="(\d+)"', r_snap.text)
+                                    )
+                                    if m:
+                                        archived_views = int(m[0])
+                                        return archived_views, dt.timestamp()
+                        except Exception:
+                            continue
+    except Exception as e:
+        logger.debug(f"Wayback CDX resolver error for {video_id}: {e}")
+
+    return None
 
 
 class VPHService:
     """
-    On-Demand VPH Service with 15-Minute Local Throttling and Lazy Anchoring Engine.
+    On-Demand VPH Service with 15-Minute Local Throttling, Lazy Anchoring Engine,
+    Wayback Machine Cold-Start Resolution, and Weighted Confidence Scoring.
     """
 
     def __init__(self, cache_ttl_seconds: int = 900):
         self.cache_ttl = cache_ttl_seconds # 15 minutes local cache protection
         self.fetcher = MultiSourceVideoFetcher()
         self.cache_file = _get_vph_cache_filepath()
-        # Memory storage: video_id -> { "anchor_ts": float, "anchor_views": int, "last_vph": float, "published_at": str, "last_fetch_ts": float, "last_response": dict }
+        # Memory storage: video_id -> anchor data & cached response
         self._anchors_db: Dict[str, Dict[str, Any]] = {}
         self._load_cache()
 
@@ -313,6 +427,73 @@ class VPHService:
         
         return "dormant"
 
+    @staticmethod
+    def calculate_confidence_score(
+        confidence: str,
+        delta_hours: float,
+        wayback_resolved: bool,
+        audit_detected: bool,
+        organic_engagement: bool,
+        cache_mutation_active: bool,
+        provider_used: str,
+        delta_views: int,
+        delta_likes: int,
+        is_reaccess: bool
+    ) -> int:
+        """
+        Calculates mathematical Confidence Score (0 to 100%):
+        - Base: 30 points
+        - Window 1-24h in local DB: +30 points
+        - Window > 24h resolved via Wayback Machine: +20 points
+        - Window 15-59 min (proportional): +10 points
+        - Engagement coherence (ΔViews > 50 and ΔLikes > 0): +20 points
+        - Active CDN mutation verified: +10 points
+        - Multi-source consistency (without emergency fallback): +10 points
+        - Penalties:
+          * Audit detected: score = 0
+          * Severe anomaly (Jump >= 500 views with ΔLikes <= 0 on re-access >= 15 min): -25 points
+          * Lifetime fallback: capped at 40 points
+        - Clamped strictly into [0, 100].
+        """
+        if audit_detected:
+            return 0
+
+        score = 30.0
+
+        # Temporal window
+        if is_reaccess:
+            if 1.0 <= delta_hours <= 24.0:
+                score += 30.0
+            elif 0.25 <= delta_hours < 1.0:
+                score += 10.0
+            elif delta_hours > 24.0 and wayback_resolved:
+                score += 20.0
+        else:
+            if wayback_resolved and delta_hours >= 24.0:
+                score += 20.0
+
+        # Engagement coherence
+        if organic_engagement and delta_views > 50 and delta_likes > 0:
+            score += 20.0
+
+        # Cache mutation active
+        if cache_mutation_active:
+            score += 10.0
+
+        # Multi-source consistency
+        if provider_used in ("innertube", "invidious_proxy", "local_cache"):
+            score += 10.0
+
+        # Severe engagement anomaly penalty
+        if is_reaccess and delta_views >= 500 and delta_likes <= 0 and delta_hours >= 0.25:
+            score -= 25.0
+
+        # Lifetime fallback cap
+        if confidence == "lifetime_fallback":
+            score = min(40.0, score)
+
+        return max(0, min(100, int(round(score))))
+
     def get_on_demand_vph(
         self,
         video_id: str,
@@ -321,14 +502,7 @@ class VPHService:
         fallback_published: Optional[str] = None
     ) -> VideoVPHResponse:
         """
-        Calculate and return on-demand VPH for a requested video.
-        
-        Steps:
-        1. Check local 15-min throttle cache.
-        2. Ingest exact data via MultiSourceVideoFetcher cascade.
-        3. Apply Lazy Anchoring algorithm (Cold start, >=1h delta, 15-60m proportional delta, negative audit clamp).
-        4. Classify traffic vitality.
-        5. Return VideoVPHResponse contract object.
+        Calculate and return on-demand VPH for a requested video with all statistical layers.
         """
         now = datetime.now(timezone.utc)
         now_ts = now.timestamp()
@@ -343,8 +517,10 @@ class VPHService:
                 cached_resp["providerUsed"] = "local_cache"
                 return cached_resp
 
-        # Step 2: Multi-Source Ingestion
-        exact_views, pub_date, provider_used = self.fetcher.fetch_exact_video_details(video_id)
+        # Step 2: Multi-Source Ingestion (Views + Likes + Schema)
+        exact_views, like_count, pub_date, provider_used, cache_mutation_active = (
+            self.fetcher.fetch_exact_video_details(video_id)
+        )
 
         # Fallback to provided metadata if live network fetch fails
         if exact_views is None:
@@ -354,6 +530,7 @@ class VPHService:
                 provider_used = "embed_fallback"
             elif record and record.get("anchor_views") is not None:
                 exact_views = int(record["anchor_views"])
+                like_count = record.get("anchor_likes", 0)
                 pub_date = record.get("published_at", "")
                 provider_used = "local_cache"
             else:
@@ -364,35 +541,68 @@ class VPHService:
         pub_dt = self.parse_published_datetime(pub_date)
         pub_iso = pub_dt.isoformat() if pub_dt else (pub_date or now_iso)
 
-        # Step 3: Lazy Anchoring Engine
+        # Step 3: Lazy Anchoring & Engagement Correlation Engine
         audit_detected = False
+        organic_engagement = False
+        wayback_resolved = False
+        is_reaccess = False
+        delta_views = 0
+        delta_likes = 0
 
         if not record or "anchor_ts" not in record:
             # Scenario A: Cold Start (First query for this video)
-            hours_since_pub = 1.0
-            if pub_dt:
-                diff_seconds = (now - pub_dt).total_seconds()
-                hours_since_pub = max(1.0, diff_seconds / 3600.0)
-            
-            vph_lifetime = float(exact_views) / hours_since_pub
-            vph_val = round(vph_lifetime, 2)
-            confidence: Literal['high', 'medium', 'lifetime_fallback'] = "lifetime_fallback"
-            delta_hours = round(hours_since_pub, 2)
+            is_reaccess = False
+            wayback_anchor = fetch_wayback_anchor(video_id, timeout=2.5)
 
-            # Store anchor
+            if wayback_anchor is not None:
+                archive_views, archive_ts = wayback_anchor
+                delta_wb_hours = max(0.01, (now_ts - archive_ts) / 3600.0)
+                if exact_views >= archive_views:
+                    vph_val = round((exact_views - archive_views) / delta_wb_hours, 2)
+                    wayback_resolved = True
+                    confidence: Literal['high', 'medium', 'low', 'lifetime_fallback'] = "medium"
+                    delta_hours = round(delta_wb_hours, 2)
+                else:
+                    # Views dropped compared to archive
+                    vph_val = 0.0
+                    audit_detected = True
+                    confidence = "medium"
+                    delta_hours = round(delta_wb_hours, 2)
+            else:
+                # Fallback to Lifetime VPH
+                hours_since_pub = 1.0
+                if pub_dt:
+                    diff_seconds = (now - pub_dt).total_seconds()
+                    hours_since_pub = max(1.0, diff_seconds / 3600.0)
+                
+                vph_lifetime = float(exact_views) / hours_since_pub
+                vph_val = round(vph_lifetime, 2)
+                confidence = "lifetime_fallback"
+                wayback_resolved = False
+                delta_hours = round(hours_since_pub, 2)
+
+            # Store anchor in database
             self._anchors_db[video_id] = {
                 "anchor_ts": now_ts,
                 "anchor_views": exact_views,
+                "anchor_likes": like_count,
                 "last_vph": vph_val,
                 "published_at": pub_iso,
                 "last_fetch_ts": now_ts
             }
         else:
-            # Re-access scenarios
+            # Re-access scenarios (Scenario B & C)
+            is_reaccess = True
             old_ts = record.get("anchor_ts", now_ts)
             old_views = record.get("anchor_views", exact_views)
+            old_likes = record.get("anchor_likes", 0)
             prev_vph = record.get("last_vph", 0.0)
             delta_hours = max(0.001, (now_ts - old_ts) / 3600.0)
+            delta_views = exact_views - old_views
+            delta_likes = like_count - old_likes
+
+            if delta_likes > 0:
+                organic_engagement = True
 
             if delta_hours >= (1.0 - 1e-3):
                 # Scenario B: Re-access with delta >= 1 hour
@@ -403,35 +613,38 @@ class VPHService:
                     confidence = "high"
                     self._anchors_db[video_id]["anchor_ts"] = now_ts
                     self._anchors_db[video_id]["anchor_views"] = exact_views
+                    self._anchors_db[video_id]["anchor_likes"] = like_count
                     self._anchors_db[video_id]["last_vph"] = 0.0
                 else:
-                    vph_val = round((exact_views - old_views) / delta_hours, 2)
+                    vph_val = round(delta_views / delta_hours, 2)
                     if vph_val < 0.1:
                         vph_val = 0.0
                     confidence = "high"
                     self._anchors_db[video_id]["anchor_ts"] = now_ts
                     self._anchors_db[video_id]["anchor_views"] = exact_views
+                    self._anchors_db[video_id]["anchor_likes"] = like_count
                     self._anchors_db[video_id]["last_vph"] = vph_val
 
-            elif delta_hours >= 0.25: # Between 15 and 60 minutes
+            elif delta_hours >= 0.25:
                 # Scenario C: Re-access between 15 and 60 minutes
                 if exact_views > old_views:
-                    vph_val = round((exact_views - old_views) / delta_hours, 2)
+                    vph_val = round(delta_views / delta_hours, 2)
                     confidence = "medium"
                     self._anchors_db[video_id]["anchor_ts"] = now_ts
                     self._anchors_db[video_id]["anchor_views"] = exact_views
+                    self._anchors_db[video_id]["anchor_likes"] = like_count
                     self._anchors_db[video_id]["last_vph"] = vph_val
                 elif exact_views == old_views:
-                    # Maintain last calculated VPH (handles YouTube CDN batch synchronization delays)
+                    # Maintain last calculated VPH (handles YouTube CDN batch sync delay)
                     vph_val = prev_vph
                     confidence = "medium"
                 else:
-                    # Negative delta in short interval
                     vph_val = 0.0
                     audit_detected = True
                     confidence = "medium"
                     self._anchors_db[video_id]["anchor_ts"] = now_ts
                     self._anchors_db[video_id]["anchor_views"] = exact_views
+                    self._anchors_db[video_id]["anchor_likes"] = like_count
                     self._anchors_db[video_id]["last_vph"] = 0.0
             else:
                 # Very recent access (< 15 mins) fallback
@@ -443,16 +656,39 @@ class VPHService:
         # Step 4: Traffic Classification
         traffic_status = self.classify_traffic(vph_val, pub_dt, now)
 
-        # Step 5: Construct Typed Response Object
+        # Step 5: Calculate Weighted Confidence Score (0 to 100%)
+        confidence_score = self.calculate_confidence_score(
+            confidence=confidence,
+            delta_hours=delta_hours,
+            wayback_resolved=wayback_resolved,
+            audit_detected=audit_detected,
+            organic_engagement=organic_engagement,
+            cache_mutation_active=cache_mutation_active,
+            provider_used=provider_used or "innertube",
+            delta_views=delta_views,
+            delta_likes=delta_likes,
+            is_reaccess=is_reaccess
+        )
+
+        # Adjust confidence level if score indicates low confidence
+        if confidence_score < 30 and confidence != "lifetime_fallback":
+            confidence = "low"
+
+        # Step 6: Construct Typed Response Object
         response_obj: VideoVPHResponse = {
             "videoId": video_id,
             "exactViews": int(exact_views),
+            "likeCount": int(like_count),
             "publishedAt": pub_iso,
             "vph": vph_val,
             "trafficStatus": traffic_status,
             "confidence": confidence,
-            "providerUsed": provider_used or "innertube",
+            "confidenceScore": confidence_score,
+            "waybackResolved": wayback_resolved,
+            "cacheMutationActive": cache_mutation_active,
             "auditDetected": audit_detected,
+            "organicEngagementVerified": organic_engagement,
+            "providerUsed": provider_used or "innertube",
             "deltaHours": round(delta_hours, 2),
             "calculatedAt": now_iso
         }
