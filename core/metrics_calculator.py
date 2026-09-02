@@ -16,6 +16,15 @@ import math
 from datetime import datetime, timezone, timedelta
 from typing import Dict, Any, Optional, Union, Tuple, List
 
+# Re-export on-demand VPH service & typed contract
+from core.vph_service import (
+    VideoVPHResponse,
+    MultiSourceVideoFetcher,
+    VPHService,
+    get_vph_service,
+    get_on_demand_vph
+)
+
 # In-memory snapshot history storage for real-time statistical OLS VPH tracking across cycles
 _VIDEO_SNAPSHOT_HISTORY: Dict[str, List[Tuple[float, int]]] = {}
 

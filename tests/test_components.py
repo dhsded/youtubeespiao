@@ -974,6 +974,100 @@ class TestYoutubeEspiaoCore(unittest.TestCase):
         self.assertIn("hourly_views", res)
         self.assertIn("audit_detected", res)
 
+    def test_on_demand_vph_service(self):
+        """Test on-demand VPH service, local throttling, multi-scenario lazy anchoring, and traffic classification."""
+        from core.vph_service import VPHService, VideoVPHResponse
+        from datetime import datetime, timezone, timedelta
+        import time
+
+        service = VPHService(cache_ttl_seconds=900)
+        service._anchors_db.clear()
+        v_id = "test_vph_ondemand_01"
+
+        # Mock fetcher to simulate deterministic view returns
+        mock_views = 50000
+        mock_pub = "2023-01-01T00:00:00Z"
+        mock_provider = "innertube"
+
+        def mock_fetch(vid):
+            return mock_views, mock_pub, mock_provider
+
+        service.fetcher.fetch_exact_video_details = mock_fetch
+
+        # 1. Cold Start (Scenario A): First query
+        resp1 = service.get_on_demand_vph(v_id, force_refresh=True)
+        self.assertEqual(resp1["videoId"], v_id)
+        self.assertEqual(resp1["exactViews"], 50000)
+        self.assertEqual(resp1["confidence"], "lifetime_fallback")
+        self.assertFalse(resp1["auditDetected"])
+        self.assertEqual(resp1["providerUsed"], "innertube")
+        self.assertIn("calculatedAt", resp1)
+
+        # 2. Local Throttling (< 15 mins): Returns cached result immediately with providerUsed = "local_cache"
+        resp2 = service.get_on_demand_vph(v_id, force_refresh=False)
+        self.assertEqual(resp2["providerUsed"], "local_cache")
+        self.assertEqual(resp2["exactViews"], 50000)
+
+        # 3. Re-access with Delta >= 1 hour (Scenario B): Steady traffic (+300 views in 2 hours -> 150 VPH)
+        service._anchors_db[v_id]["anchor_ts"] = time.time() - 7200.0 # 2 hours ago
+        service._anchors_db[v_id]["anchor_views"] = 50000
+        service._anchors_db[v_id]["last_fetch_ts"] = time.time() - 7200.0
+        mock_views = 50300
+
+        resp3 = service.get_on_demand_vph(v_id, force_refresh=True)
+        self.assertEqual(resp3["confidence"], "high")
+        self.assertAlmostEqual(resp3["vph"], 150.0, delta=1.0)
+        self.assertEqual(resp3["trafficStatus"], "active")
+        self.assertFalse(resp3["auditDetected"])
+
+        # 4. YouTube Audit Detection: Negative Delta in >= 1h (views removed: 50,300 -> 49,000)
+        service._anchors_db[v_id]["anchor_ts"] = time.time() - 3650.0
+        service._anchors_db[v_id]["anchor_views"] = 50300
+        service._anchors_db[v_id]["last_fetch_ts"] = time.time() - 3650.0
+        mock_views = 49000
+
+        resp4 = service.get_on_demand_vph(v_id, force_refresh=True)
+        self.assertEqual(resp4["vph"], 0.0)
+        self.assertTrue(resp4["auditDetected"])
+        self.assertEqual(resp4["confidence"], "high")
+
+        # 5. Re-access between 15 and 60 minutes (Scenario C):
+        # 5a. Positive delta (+100 views in 30 min -> 200 VPH)
+        service._anchors_db[v_id]["anchor_ts"] = time.time() - 1800.0 # 30 min ago
+        service._anchors_db[v_id]["anchor_views"] = 49000
+        service._anchors_db[v_id]["last_fetch_ts"] = time.time() - 1800.0
+        mock_views = 49100
+
+        resp5a = service.get_on_demand_vph(v_id, force_refresh=True)
+        self.assertEqual(resp5a["confidence"], "medium")
+        self.assertAlmostEqual(resp5a["vph"], 200.0, delta=2.0)
+
+        # 5b. Same views (CDN batch delay -> preserve previous VPH)
+        service._anchors_db[v_id]["anchor_ts"] = time.time() - 1800.0
+        service._anchors_db[v_id]["anchor_views"] = 49100
+        service._anchors_db[v_id]["last_vph"] = 200.0
+        service._anchors_db[v_id]["last_fetch_ts"] = time.time() - 1800.0
+        mock_views = 49100
+
+        resp5b = service.get_on_demand_vph(v_id, force_refresh=True)
+        self.assertEqual(resp5b["confidence"], "medium")
+        self.assertEqual(resp5b["vph"], 200.0)
+
+        # 6. Traffic Classification Rules
+        now = datetime.now(timezone.utc)
+        old_pub = now - timedelta(days=200)
+        new_pub = now - timedelta(days=30)
+
+        # viral_spike: >= 500
+        self.assertEqual(VPHService.classify_traffic(550.0, new_pub, now), "viral_spike")
+        # active: 20 <= VPH < 500
+        self.assertEqual(VPHService.classify_traffic(150.0, new_pub, now), "active")
+        # evergreen: 2 <= VPH < 20 on videos > 180 days
+        self.assertEqual(VPHService.classify_traffic(8.0, old_pub, now), "evergreen")
+        # dormant: < 2 (or < 20 on new videos)
+        self.assertEqual(VPHService.classify_traffic(1.0, old_pub, now), "dormant")
+        self.assertEqual(VPHService.classify_traffic(8.0, new_pub, now), "dormant")
+
 if __name__ == "__main__":
     unittest.main()
 
