@@ -352,8 +352,8 @@ AVAILABLE_LANGUAGES: Dict[str, Dict[str, str]] = {
 }
 
 GLOBAL_EXPANSION_LANGS = [
-    "pt", "en", "es", "de", "fr", "it", "ja", "ko", "zh", "ru",
-    "hi", "tr", "ar", "nl", "pl", "sv", "id", "vi"
+    "en", "es", "de", "fr", "it", "pt", "ja", "ko",
+    "zh", "ru", "hi", "tr", "ar", "nl", "pl", "sv", "id", "vi"
 ]
 
 def is_universal_acronym(text: str) -> bool:

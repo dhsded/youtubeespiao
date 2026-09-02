@@ -111,9 +111,9 @@ class VideoTableView(QWidget):
         "Título do Vídeo",
         "Canal",
         "Total Views",
-        "Views 90 Dias",
-        "⚡ VPH",
         "Tráfego / Dia",
+        "⚡ VPH",
+        "Views 90 Dias",
         "Views / Mês",
         "Views / Ano",
         "Data de Envio",
@@ -264,11 +264,11 @@ class VideoTableView(QWidget):
             elif logical_index == 3:
                 return m.get("view_count", 0)
             elif logical_index == 4:
-                return m.get("views_90d", m.get("view_count", 0))
+                return m.get("daily_views", 0)
             elif logical_index == 5:
                 return m.get("hourly_views", 0)
             elif logical_index == 6:
-                return m.get("daily_views", 0)
+                return m.get("views_90d", m.get("view_count", 0))
             elif logical_index == 7:
                 return m.get("monthly_views", 0)
             elif logical_index == 8:
@@ -422,14 +422,12 @@ class VideoTableView(QWidget):
             views_item.setToolTip(f"Total de visualizações acumuladas: {tot_views:,}")
             self.table.setItem(row, 3, views_item)
 
-            # 4. Views in the Last 90 Days
-            v_90d = m.get("views_90d", tot_views)
-            v90d_formatted = m.get("views_90d_formatted", format_number(v_90d))
-            v90d_item = NumericTableWidgetItem(f"⚡ {v90d_formatted}", v_90d)
-            v90d_item.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
-            v90d_item.setForeground(QColor("#8B5CF6"))
-            v90d_item.setToolTip(f"Visualizações estimadas nos últimos 90 dias: {v_90d:,}")
-            self.table.setItem(row, 4, v90d_item)
+            # 4. Daily Views (Tráfego / Dia)
+            d_views = m.get("daily_views", 0)
+            daily_item = NumericTableWidgetItem(m.get("daily_views_formatted", f"🔥 {d_views}/dia"), d_views)
+            daily_item.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
+            daily_item.setForeground(QColor("#16A34A"))
+            self.table.setItem(row, 4, daily_item)
 
             # 5. VPH (Views Per Hour)
             h_views = m.get("hourly_views", 0)
@@ -443,12 +441,14 @@ class VideoTableView(QWidget):
             )
             self.table.setItem(row, 5, vph_item)
 
-            # 6. Daily Views (Views/Dia)
-            d_views = m.get("daily_views", 0)
-            daily_item = NumericTableWidgetItem(m.get("daily_views_formatted", f"🔥 {d_views}/dia"), d_views)
-            daily_item.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
-            daily_item.setForeground(QColor("#16A34A"))
-            self.table.setItem(row, 6, daily_item)
+            # 6. Views in the Last 90 Days
+            v_90d = m.get("views_90d", tot_views)
+            v90d_formatted = m.get("views_90d_formatted", format_number(v_90d))
+            v90d_item = NumericTableWidgetItem(f"⚡ {v90d_formatted}", v_90d)
+            v90d_item.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
+            v90d_item.setForeground(QColor("#8B5CF6"))
+            v90d_item.setToolTip(f"Visualizações estimadas nos últimos 90 dias: {v_90d:,}")
+            self.table.setItem(row, 6, v90d_item)
 
             # 7. Monthly Views (Views/Mês)
             m_views = m.get("monthly_views", 0)
@@ -678,11 +678,11 @@ class DomainTableView(QWidget):
         "⚖️ Risco Marca",
         "Qtd Vídeos",
         "Soma Tráfego / Dia",
+        "⚡ VPH",
         "Views 90 Dias",
         "Total Views",
         "Vídeo de Origem",
         "Data de Envio",
-        "⚡ VPH",
         "Views / Mês",
         "Views / Ano",
         "Detalhes / WHOIS",
@@ -857,15 +857,15 @@ class DomainTableView(QWidget):
             elif logical_index == 5:
                 return d.get("total_daily_views", 0)
             elif logical_index == 6:
-                return d.get("total_views_90d", 0)
-            elif logical_index == 7:
-                return d.get("total_view_count", 0)
-            elif logical_index == 8:
-                return (d.get("video_title") or "").lower()
-            elif logical_index == 9:
-                return (d.get("video_metrics", {}).get("publish_date") or "")
-            elif logical_index == 10:
                 return d.get("total_hourly_views", 0)
+            elif logical_index == 7:
+                return d.get("total_views_90d", 0)
+            elif logical_index == 8:
+                return d.get("total_view_count", 0)
+            elif logical_index == 9:
+                return (d.get("video_title") or "").lower()
+            elif logical_index == 10:
+                return (d.get("video_metrics", {}).get("publish_date") or "")
             elif logical_index == 11:
                 return d.get("total_monthly_views", 0)
             elif logical_index == 12:
@@ -1142,7 +1142,16 @@ class DomainTableView(QWidget):
             daily_item.setData(Qt.ItemDataRole.UserRole, d)
             self.table.setItem(row, 5, daily_item)
 
-            # 6. Cumulative 90-Day Views Sum (Soma Views 90 Dias)
+            # 6. Cumulative Views per Hour (⚡ VPH Soma)
+            tot_hourly = d.get("total_hourly_views", 0)
+            hourly_item = NumericTableWidgetItem(format_vph(tot_hourly), tot_hourly)
+            hourly_item.setForeground(QColor("#D97706"))
+            hourly_item.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
+            hourly_item.setToolTip(f"Soma da velocidade horária recente de todos os {v_cnt} vídeos associados: {tot_hourly:.2f} views/hora.")
+            hourly_item.setData(Qt.ItemDataRole.UserRole, d)
+            self.table.setItem(row, 6, hourly_item)
+
+            # 7. Cumulative 90-Day Views Sum (Soma Views 90 Dias)
             tot_90d = d.get("total_views_90d", d.get("total_view_count", 0))
             views_90d_formatted = f"⚡ {format_number(tot_90d)}"
             views_90d_item = NumericTableWidgetItem(views_90d_formatted, tot_90d)
@@ -1150,9 +1159,9 @@ class DomainTableView(QWidget):
             views_90d_item.setForeground(QColor("#8B5CF6"))
             views_90d_item.setToolTip(f"Soma das visualizações recentes estimadas nos últimos 90 dias de todos os vídeos associados.")
             views_90d_item.setData(Qt.ItemDataRole.UserRole, d)
-            self.table.setItem(row, 6, views_90d_item)
+            self.table.setItem(row, 7, views_90d_item)
 
-            # 7. Cumulative Total Views (Soma Views Totais)
+            # 8. Cumulative Total Views (Soma Views Totais)
             tot_views = d.get("total_view_count", 0)
             tot_views_formatted = f"{format_number(tot_views)}"
             tot_views_item = NumericTableWidgetItem(tot_views_formatted, tot_views)
@@ -1160,9 +1169,9 @@ class DomainTableView(QWidget):
             tot_views_item.setForeground(QColor("#0284C7"))
             tot_views_item.setToolTip(f"Soma de todas as visualizações acumuladas dos {v_cnt} vídeos associados.")
             tot_views_item.setData(Qt.ItemDataRole.UserRole, d)
-            self.table.setItem(row, 7, tot_views_item)
+            self.table.setItem(row, 8, tot_views_item)
 
-            # 8. Associated / Primary Video Title (Detailed for Multi-Video Occurrences)
+            # 9. Associated / Primary Video Title (Detailed for Multi-Video Occurrences)
             v_title = d.get("video_title", "")
             if v_cnt > 1:
                 display_v_title = f"🎬 {v_cnt} Vídeos: {v_title[:36]}... (+{v_cnt - 1} outros)"
@@ -1178,24 +1187,15 @@ class DomainTableView(QWidget):
             title_item = QTableWidgetItem(display_v_title)
             title_item.setToolTip(full_v_tooltip)
             title_item.setData(Qt.ItemDataRole.UserRole, d)
-            self.table.setItem(row, 8, title_item)
+            self.table.setItem(row, 9, title_item)
 
-            # 9. Upload Date (Data de Envio)
+            # 10. Upload Date (Data de Envio)
             pub_date = d.get("video_metrics", {}).get("publish_date", "Recente")
             date_item = QTableWidgetItem(pub_date)
             date_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             date_item.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
             date_item.setData(Qt.ItemDataRole.UserRole, d)
-            self.table.setItem(row, 9, date_item)
-
-            # 10. Cumulative Views per Hour (⚡ VPH Soma)
-            tot_hourly = d.get("total_hourly_views", 0)
-            hourly_item = NumericTableWidgetItem(format_vph(tot_hourly), tot_hourly)
-            hourly_item.setForeground(QColor("#D97706"))
-            hourly_item.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
-            hourly_item.setToolTip(f"Soma da velocidade horária recente de todos os {v_cnt} vídeos associados: {tot_hourly:.2f} views/hora.")
-            hourly_item.setData(Qt.ItemDataRole.UserRole, d)
-            self.table.setItem(row, 10, hourly_item)
+            self.table.setItem(row, 10, date_item)
 
             # 11. Cumulative Views per Month
             tot_monthly = d.get("total_monthly_views", 0)

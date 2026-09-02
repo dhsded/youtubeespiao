@@ -36,6 +36,7 @@ from core.profile_manager import (
     get_named_profiles, save_named_profile, delete_named_profile
 )
 from ui.video_table_model import VideoTableView, DomainTableView
+from ui.domain_seo_tab import DomainSEOTab
 from ui.settings_tab import APP_SETTINGS
 
 class CountryExclusionDialog(QDialog):
@@ -437,7 +438,12 @@ class HunterTab(QWidget):
 
         self.results_tabs.addTab(domain_container, "💎 Domínios & Instagrams Expirados")
 
-        # Tab 3: Real-time logs
+        # Tab 3: SEO Analysis of Available Domains
+        self.seo_tab = DomainSEOTab()
+        self.seo_tab.open_url_requested.connect(self._on_open_video_requested)
+        self.results_tabs.addTab(self.seo_tab, "📊 Análise SEO de Domínios")
+
+        # Tab 4: Real-time logs
         self.log_view = QPlainTextEdit()
         self.log_view.setObjectName("log_view")
         self.log_view.setReadOnly(True)
@@ -650,7 +656,7 @@ class HunterTab(QWidget):
         row3.addWidget(lbl_lim)
 
         self.spin_max = QSpinBox()
-        self.spin_max.setRange(5, 100000)
+        self.spin_max.setRange(5, 10000000)
         self.spin_max.setValue(50)
         self.spin_max.setSingleStep(50)
         self.spin_max.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -658,7 +664,7 @@ class HunterTab(QWidget):
         row3.addWidget(self.spin_max)
 
         self.chk_unlimited = QCheckBox("♾️ Todos os Vídeos")
-        self.chk_unlimited.setToolTip("Busca todos os vídeos disponíveis do canal ou termo (até 100.000).")
+        self.chk_unlimited.setToolTip("Busca todos os vídeos disponíveis (até 10 milhões).")
         self.chk_unlimited.toggled.connect(lambda checked: self.spin_max.setEnabled(not checked))
         row3.addWidget(self.chk_unlimited)
 
@@ -1092,7 +1098,7 @@ class HunterTab(QWidget):
             year_range = None
 
         min_views = self.get_min_views()
-        max_vids = 100000 if self.chk_unlimited.isChecked() else self.spin_max.value()
+        max_vids = 10000000 if self.chk_unlimited.isChecked() else self.spin_max.value()
         sort_by = self.combo_sort.currentData()
         fast_mode = self.chk_fast_mode.isChecked()
         include_related = self.chk_include_related.isChecked() if search_mode == "keywords" else False
@@ -1276,6 +1282,10 @@ class HunterTab(QWidget):
         name = domain_dict.get("display_name") or domain_dict.get("root_domain", "")
         self._append_log(f"  {badge} {name} -> {status} ({domain_dict.get('source_location')})")
         self._trigger_autosave()
+
+        # Alimentar aba de Análise SEO automaticamente com domínios disponíveis
+        if status == "Disponível":
+            self.seo_tab.add_domain(domain_dict)
 
     def _trigger_autosave(self):
         """Perform automatic atomic session save to disk and emergency backup in Downloads."""

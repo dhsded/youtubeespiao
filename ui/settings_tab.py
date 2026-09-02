@@ -62,7 +62,54 @@ class SettingsTab(QWidget):
 
         layout.addWidget(group_safety)
 
-        # 2. Domain Whitelist
+        # 2. API Keys for SEO Analysis
+        group_api = QGroupBox("🔑 Chaves de API para Análise SEO de Domínios")
+        api_layout = QVBoxLayout(group_api)
+        api_layout.setSpacing(10)
+
+        lbl_api_info = QLabel(
+            "Insira suas chaves de API <b>gratuitas</b> para habilitar a análise completa de domínios disponíveis.<br>"
+            "<span style='color: #64748B;'>As demais análises (RDAP, Wayback Machine, DNS) funcionam sem chave.</span>"
+        )
+        lbl_api_info.setWordWrap(True)
+        api_layout.addWidget(lbl_api_info)
+
+        # Open PageRank API Key
+        opr_layout = QHBoxLayout()
+        opr_layout.addWidget(QLabel("📊 Open PageRank API Key:"))
+        self.txt_opr_key = QLineEdit()
+        self.txt_opr_key.setPlaceholderText("opr_live_xxxxxxxxxxxxxxxx (Grátis: 30.000/mês)")
+        self.txt_opr_key.setEchoMode(QLineEdit.EchoMode.Password)
+        opr_layout.addWidget(self.txt_opr_key)
+        btn_opr_show = QPushButton("👁")
+        btn_opr_show.setFixedWidth(35)
+        btn_opr_show.setToolTip("Mostrar/ocultar chave")
+        btn_opr_show.clicked.connect(lambda: self.txt_opr_key.setEchoMode(
+            QLineEdit.EchoMode.Normal if self.txt_opr_key.echoMode() == QLineEdit.EchoMode.Password else QLineEdit.EchoMode.Password
+        ))
+        opr_layout.addWidget(btn_opr_show)
+        api_layout.addLayout(opr_layout)
+
+        lbl_opr_signup = QLabel(
+            "🔗 <a href='https://www.domcop.com/openpagerank/' style='color: #38BDF8;'>Criar chave gratuita no Open PageRank</a> "
+            "(30.000 consultas/mês, sem cartão de crédito)"
+        )
+        lbl_opr_signup.setOpenExternalLinks(True)
+        lbl_opr_signup.setWordWrap(True)
+        api_layout.addWidget(lbl_opr_signup)
+
+        layout.addWidget(group_api)
+
+        # Load saved API keys
+        try:
+            from core.domain_seo_service import load_api_key
+            saved_opr = load_api_key("open_pagerank_key")
+            if saved_opr:
+                self.txt_opr_key.setText(saved_opr)
+        except Exception:
+            pass
+
+        # 3. Domain Whitelist
         group_ignore = QGroupBox("🛡️ Lista de Domínios Ignorados (Whitelist de Grandes Plataformas)")
         g_layout = QVBoxLayout(group_ignore)
         g_layout.setSpacing(8)
@@ -110,6 +157,15 @@ class SettingsTab(QWidget):
         APP_SETTINGS["min_delay"] = self.spin_min_delay.value()
         APP_SETTINGS["max_delay"] = self.spin_max_delay.value()
         APP_SETTINGS["proxy_url"] = self.txt_proxy.text().strip()
+
+        # Save API keys
+        try:
+            from core.domain_seo_service import save_api_key
+            opr_key = self.txt_opr_key.text().strip()
+            if opr_key:
+                save_api_key("open_pagerank_key", opr_key)
+        except Exception:
+            pass
 
         QMessageBox.information(
             self,

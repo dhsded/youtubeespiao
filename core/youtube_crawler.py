@@ -1063,6 +1063,20 @@ class YouTubeCrawler:
                 if on_domain_found:
                     on_domain_found(domain_record)
 
+                # 🔍 Caça Reversa: Se domínio disponível, buscar TODOS os vídeos no YouTube
+                if val_res.get("status") == "Disponível" and not d.get("is_instagram"):
+                    reverse_vids = self._reverse_harvest_domain_videos(
+                        root_domain=d["root_domain"],
+                        hl=hl, gl=gl,
+                        max_results=50,
+                        on_video_processed=on_video_processed,
+                        on_domain_found=on_domain_found,
+                        on_progress=on_progress
+                    )
+                    for rv in reverse_vids:
+                        if rv.get("id") not in {s.get("id") for s in scanned_videos}:
+                            scanned_videos.append(rv)
+
             video_record = {
                 "id": v_item["id"],
                 "url": v_item["url"],
@@ -1109,3 +1123,131 @@ class YouTubeCrawler:
             return int(nums) if nums else 0
         except Exception:
             return 0
+
+    def _reverse_harvest_domain_videos(
+        self,
+        root_domain: str,
+        hl: str = "en",
+        gl: str = "US",
+        max_results: int = 50,
+        on_video_processed: Optional[Callable] = None,
+        on_domain_found: Optional[Callable] = None,
+        on_progress: Optional[Callable] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Caça Reversa Ultra-Robusta: Busca no YouTube TODOS os vídeos que mencionam
+        um domínio específico na descrição ou comentários.
+        Executada automaticamente quando um domínio é validado como Disponível.
+        """
+        harvested = []
+        search_queries = [
+            f'"{root_domain}"',
+            f'"www.{root_domain}"',
+            f'"https://{root_domain}"',
+            f'"http://{root_domain}"',
+        ]
+
+        all_found_ids = set()
+
+        for q_idx, query in enumerate(search_queries):
+            if self._is_stopped:
+                break
+
+            if on_progress:
+                on_progress(q_idx, len(search_queries),
+                    f"🔍 Caça Reversa: Buscando vídeos com '{root_domain}' (variação {q_idx+1}/{len(search_queries)})...")
+
+            try:
+                results = self.search_videos(
+                    keyword=query,
+                    max_results=min(max_results, 30),
+                    sort_by="relevance",
+                    hl=hl,
+                    gl=gl
+                )
+
+                for v_item in results:
+                    if self._is_stopped:
+                        break
+
+                    vid_id = v_item.get("id")
+                    if not vid_id or vid_id in all_found_ids or vid_id in self.seen_video_ids:
+                        continue
+                    all_found_ids.add(vid_id)
+
+                    # Verificar presença real do domínio no conteúdo do vídeo
+                    deep_info = self.get_video_deep_details(v_item.get("url", ""), hl=hl, gl=gl)
+                    desc = deep_info.get("description", "")
+                    pinned = deep_info.get("pinned_comment", "")
+                    combined_text = f"{desc} {pinned}".lower()
+
+                    if root_domain.lower() not in combined_text:
+                        continue
+
+                    # Domínio confirmado neste vídeo
+                    self.seen_video_ids.add(vid_id)
+
+                    title = deep_info.get("title") or v_item.get("title", "Sem Título")
+                    channel = deep_info.get("channel_name") or v_item.get("channel_name", "Canal")
+                    thumbnail = deep_info.get("thumbnail") or v_item.get("thumbnail", "")
+                    view_count = deep_info.get("view_count") or v_item.get("initial_view_count") or 0
+
+                    metrics = calculate_video_metrics(
+                        view_count=view_count,
+                        upload_date=deep_info.get("upload_date"),
+                        timestamp=deep_info.get("timestamp"),
+                        published_text=v_item.get("published_text"),
+                        video_id=vid_id
+                    )
+
+                    video_record = {
+                        "id": vid_id,
+                        "url": v_item["url"],
+                        "title": title,
+                        "channel_name": channel,
+                        "thumbnail": thumbnail,
+                        "description": desc,
+                        "pinned_comment": pinned,
+                        "keyword": f"🔍 Caça Reversa: {root_domain}",
+                        "language": hl,
+                        "metrics": metrics,
+                        "domains": []
+                    }
+
+                    harvested.append(video_record)
+
+                    if on_video_processed:
+                        on_video_processed(video_record)
+
+                    # Emitir o domínio encontrado neste vídeo
+                    domain_record = {
+                        "root_domain": root_domain,
+                        "display_name": root_domain,
+                        "full_url": f"https://{root_domain}",
+                        "source_location": "🔍 Caça Reversa",
+                        "is_instagram": False,
+                        "status": "Disponível",
+                        "badge_icon": "🟢",
+                        "video_id": vid_id,
+                        "video_title": title,
+                        "video_url": v_item["url"],
+                        "channel_name": channel,
+                        "keyword": f"🔍 Caça Reversa: {root_domain}",
+                        "language": hl,
+                        "video_metrics": metrics
+                    }
+
+                    if on_domain_found:
+                        on_domain_found(domain_record)
+
+                    self._sleep_jitter()
+
+            except Exception as e:
+                logger.debug(f"Erro na caça reversa para '{root_domain}' com query '{query}': {e}")
+
+            time.sleep(0.5)
+
+        if harvested:
+            logger.info(f"🔍 Caça Reversa: Encontrados {len(harvested)} vídeos adicionais com '{root_domain}'")
+
+        return harvested

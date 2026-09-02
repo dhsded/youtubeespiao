@@ -644,7 +644,7 @@ class TestYoutubeEspiaoCore(unittest.TestCase):
         from ui.hunter_tab import HunterTab
 
         hunter = HunterTab()
-        self.assertEqual(hunter.spin_max.maximum(), 100000)
+        self.assertEqual(hunter.spin_max.maximum(), 10000000)
         self.assertEqual(hunter.spin_max.minimum(), 5)
         
         # Test unlimited toggle
