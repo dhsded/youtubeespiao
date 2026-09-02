@@ -317,6 +317,12 @@ class HunterTab(QWidget):
         self.telemetry_timer.setInterval(500)
         self.telemetry_timer.timeout.connect(self._update_telemetry)
 
+        # Mining Activity Pulse Timer (Visual blinking animation when mining is active)
+        self.pulse_timer = QTimer(self)
+        self.pulse_timer.setInterval(600)
+        self.pulse_timer.timeout.connect(self._on_mining_pulse)
+        self._pulse_state = False
+
         self.named_profiles: Dict[str, Dict[str, Any]] = {}
 
         self._init_ui()
@@ -329,8 +335,10 @@ class HunterTab(QWidget):
         self.is_background_mode = is_bg
         if is_bg:
             self.telemetry_timer.setInterval(4000)
+            self.pulse_timer.setInterval(2000)
         else:
             self.telemetry_timer.setInterval(500)
+            self.pulse_timer.setInterval(600)
             self.all_videos.sort(key=lambda x: x.get("metrics", {}).get("view_count", 0), reverse=True)
             self.video_table.set_videos(self.all_videos)
             self.domain_table.set_domains(self.all_domains)
@@ -1153,19 +1161,46 @@ class HunterTab(QWidget):
         self.crawler_thread.error_occurred.connect(self._on_error_occurred)
         self.crawler_thread.start(QThread.Priority.LowPriority)
 
-    def _on_active_keyword_changed(self, target: str, category: str, current_idx: int, total_count: int):
-        """Update the prominent active keyword HUD display in real-time."""
-        self.lbl_active_keyword.setText(f"🎯 \"{target}\"  •  {category}")
-        self.lbl_active_progress_pill.setText(f"Alvo {current_idx} de {total_count}")
-        if not self.is_background_mode:
+        # Start glowing visual pulse animation
+        self._pulse_state = True
+        self.pulse_timer.start(600)
+        self._on_mining_pulse()
+
+    def _on_mining_pulse(self):
+        """Pulsing visual animation for the active mining HUD banner to show live activity."""
+        if self.is_background_mode or not self.crawler_thread or not self.crawler_thread.isRunning() or self.is_paused:
+            return
+        
+        self._pulse_state = not self._pulse_state
+        if self._pulse_state:
+            # Active glowing pulse state
             self.active_target_card.setStyleSheet("""
                 QFrame#active_target_card {
-                    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #0F172A, stop:0.5 #1E293B, stop:1 #0F172A);
+                    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #0369A1, stop:0.5 #0284C7, stop:1 #0369A1);
                     border: 2px solid #38BDF8;
                     border-radius: 8px;
                     padding: 6px 12px;
                 }
             """)
+            self.lbl_active_prefix.setStyleSheet("color: #FFFFFF; font-weight: 900; font-size: 11px; letter-spacing: 0.5px;")
+            self.lbl_active_prefix.setText("⚡ MINERANDO AGORA:")
+        else:
+            # Ambient pulse state
+            self.active_target_card.setStyleSheet("""
+                QFrame#active_target_card {
+                    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #0F172A, stop:0.5 #1E293B, stop:1 #0F172A);
+                    border: 2px solid #0284C7;
+                    border-radius: 8px;
+                    padding: 6px 12px;
+                }
+            """)
+            self.lbl_active_prefix.setStyleSheet("color: #38BDF8; font-weight: 800; font-size: 11px; letter-spacing: 0.5px;")
+            self.lbl_active_prefix.setText("🔍 MINERANDO AGORA:")
+
+    def _on_active_keyword_changed(self, target: str, category: str, current_idx: int, total_count: int):
+        """Update the prominent active keyword HUD display in real-time."""
+        self.lbl_active_keyword.setText(f"🎯 \"{target}\"  •  {category}")
+        self.lbl_active_progress_pill.setText(f"Alvo {current_idx} de {total_count}")
 
     def _on_live_video_analyzed(self, url: str, title: str):
         if not self.is_background_mode:
@@ -1178,14 +1213,26 @@ class HunterTab(QWidget):
         if not self.is_paused:
             self.is_paused = True
             self.crawler_thread.pause()
+            self.pulse_timer.stop()
             self.btn_pause.setText("▶ Retomar")
             self.btn_start.setEnabled(True)
             self.btn_start.setText("▶ Retomar Busca")
             self.status_label.setText("⏸️ Mineração Pausada. Clique em 'Retomar' para prosseguir.")
+            self.lbl_active_prefix.setText("⏸️ MINERAÇÃO PAUSADA:")
+            self.lbl_active_prefix.setStyleSheet("color: #F59E0B; font-weight: 800; font-size: 11px; letter-spacing: 0.5px;")
+            self.active_target_card.setStyleSheet("""
+                QFrame#active_target_card {
+                    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #1E293B, stop:0.5 #334155, stop:1 #1E293B);
+                    border: 2px solid #F59E0B;
+                    border-radius: 8px;
+                    padding: 6px 12px;
+                }
+            """)
             self._append_log("⏸️ Mineração pausada pelo usuário.")
         else:
             self.is_paused = False
             self.crawler_thread.resume()
+            self.pulse_timer.start(600)
             self.btn_pause.setText("⏸️ Pausar")
             self.btn_start.setEnabled(False)
             self.btn_start.setText("🚀 Mineração Ativa")
@@ -1198,11 +1245,22 @@ class HunterTab(QWidget):
             self._append_log("⏹️ Encerrando processo totalmente...")
             self.crawler_thread.stop()
             self.telemetry_timer.stop()
+            self.pulse_timer.stop()
             self.is_paused = False
             self.btn_start.setEnabled(True)
             self.btn_start.setText("🚀 Iniciar Busca")
             self.btn_pause.setEnabled(False)
             self.btn_stop.setEnabled(False)
+            self.lbl_active_prefix.setText("⏹️ MINERAÇÃO ENCERRADA:")
+            self.lbl_active_prefix.setStyleSheet("color: #94A3B8; font-weight: 800; font-size: 11px; letter-spacing: 0.5px;")
+            self.active_target_card.setStyleSheet("""
+                QFrame#active_target_card {
+                    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #0F172A, stop:0.5 #1E293B, stop:1 #0F172A);
+                    border: 2px solid #475569;
+                    border-radius: 8px;
+                    padding: 6px 12px;
+                }
+            """)
 
     def _on_video_found(self, video_dict: Dict[str, Any]):
         v_id = video_dict.get("id")
@@ -1268,6 +1326,7 @@ class HunterTab(QWidget):
         self.btn_stop.setEnabled(False)
         self.is_paused = False
         self.telemetry_timer.stop()
+        self.pulse_timer.stop()
         self.progress_bar.setValue(100)
         self._trigger_autosave()
 
@@ -1279,6 +1338,16 @@ class HunterTab(QWidget):
         self.lbl_telemetry.setText(f"✅ Concluído em {time_str}  •  ⚡ Média: {avg_str}")
         self.lbl_active_keyword.setText("✅ Mineração finalizada com sucesso!")
         self.lbl_active_progress_pill.setText("Concluído")
+        self.lbl_active_prefix.setText("✅ CONCLUÍDO:")
+        self.lbl_active_prefix.setStyleSheet("color: #34D399; font-weight: 800; font-size: 11px; letter-spacing: 0.5px;")
+        self.active_target_card.setStyleSheet("""
+            QFrame#active_target_card {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #064E3B, stop:0.5 #065F46, stop:1 #064E3B);
+                border: 2px solid #10B981;
+                border-radius: 8px;
+                padding: 6px 12px;
+            }
+        """)
         self.status_label.setText(f"Varredura concluída em {time_str}! {len(self.all_videos)} vídeos e {len(self.all_domains)} oportunidades.")
         self._append_log(f"✅ Mineração finalizada ({time_str})! Disponíveis: {summary.get('available_domains', 0)} | Total: {summary.get('total_domains', 0)}")
         if self.isVisible() and not self.isMinimized():
@@ -1300,8 +1369,19 @@ class HunterTab(QWidget):
         self.btn_stop.setEnabled(False)
         self.is_paused = False
         self.telemetry_timer.stop()
+        self.pulse_timer.stop()
         self.status_label.setText(f"Erro: {err_msg}")
         self.lbl_active_keyword.setText("❌ Mineração interrompida por erro.")
+        self.lbl_active_prefix.setText("❌ ERRO:")
+        self.lbl_active_prefix.setStyleSheet("color: #F87171; font-weight: 800; font-size: 11px; letter-spacing: 0.5px;")
+        self.active_target_card.setStyleSheet("""
+            QFrame#active_target_card {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #450A0A, stop:0.5 #7F1D1D, stop:1 #450A0A);
+                border: 2px solid #EF4444;
+                border-radius: 8px;
+                padding: 6px 12px;
+            }
+        """)
         self._append_log(f"❌ Erro na varredura: {err_msg}")
         if self.isVisible() and not self.isMinimized():
             QMessageBox.critical(self, "Erro na Varredura", f"Ocorreu um erro:\n{err_msg}")

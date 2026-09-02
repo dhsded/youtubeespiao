@@ -907,6 +907,73 @@ class TestYoutubeEspiaoCore(unittest.TestCase):
         roots_punct = [d["root_domain"] for d in res_punct]
         self.assertIn("exemplo.com.br", roots_punct)
 
+    def test_statistical_ols_vph_calculation(self):
+        """Test rolling window OLS linear regression VPH calculation and edge cases."""
+        from core.metrics_calculator import calculate_ols_vph_from_history, record_video_snapshot, calculate_video_metrics
+        import time
+
+        base_ts = 1700000000.0
+
+        # 1. Steady linear growth: 100 views/hour across 4 hourly points
+        h_steady = [
+            (base_ts, 1000),
+            (base_ts + 3600, 1100),
+            (base_ts + 7200, 1200),
+            (base_ts + 10800, 1300)
+        ]
+        vph, audit = calculate_ols_vph_from_history(h_steady, base_ts + 10800)
+        self.assertAlmostEqual(vph, 100.0, delta=0.5)
+        self.assertFalse(audit)
+
+        # 2. Staircase CDN sync effect: (10k, 10k, 10k, +600 views)
+        h_staircase = [
+            (base_ts, 10000),
+            (base_ts + 3600, 10000),
+            (base_ts + 7200, 10000),
+            (base_ts + 10800, 10600)
+        ]
+        vph_stair, audit_stair = calculate_ols_vph_from_history(h_staircase, base_ts + 10800)
+        self.assertGreater(vph_stair, 0.0)
+        self.assertFalse(audit_stair)
+
+        # 3. YouTube Audit (Negative delta / views removed) -> Clamp to 0 and set audit_detected: True
+        h_audit = [
+            (base_ts, 50000),
+            (base_ts + 3600, 48000),
+            (base_ts + 7200, 46000)
+        ]
+        vph_aud, audit_flag = calculate_ols_vph_from_history(h_audit, base_ts + 7200)
+        self.assertEqual(vph_aud, 0.0)
+        self.assertTrue(audit_flag)
+
+        # 4. Fallback for < 3 samples with time >= 1h
+        h_few = [
+            (base_ts, 2000),
+            (base_ts + 7200, 2400) # 2 hours delta
+        ]
+        vph_few, audit_few = calculate_ols_vph_from_history(h_few, base_ts + 7200)
+        self.assertAlmostEqual(vph_few, 200.0, delta=0.5)
+        self.assertFalse(audit_few)
+
+        # 5. Near-zero views (< 0.1 VPH) -> returns 0.0
+        h_zero = [
+            (base_ts, 5000),
+            (base_ts + 3600, 5000),
+            (base_ts + 7200, 5000)
+        ]
+        vph_z, audit_z = calculate_ols_vph_from_history(h_zero, base_ts + 7200)
+        self.assertEqual(vph_z, 0.0)
+        self.assertFalse(audit_z)
+
+        # 6. Full calculate_video_metrics with snapshot integration
+        v_id = "test_vid_ols_99"
+        record_video_snapshot(v_id, 10000, base_ts)
+        record_video_snapshot(v_id, 10250, base_ts + 3600)
+        record_video_snapshot(v_id, 10500, base_ts + 7200)
+        res = calculate_video_metrics(10500, video_id=v_id)
+        self.assertIn("hourly_views", res)
+        self.assertIn("audit_detected", res)
+
 if __name__ == "__main__":
     unittest.main()
 

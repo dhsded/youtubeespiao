@@ -1,28 +1,135 @@
 """
 High-Precision Metrics Calculator for YouTube Video Performance & Traffic Dynamics (vidIQ Benchmark).
 Features:
-- Recent & Active VPH (Velocidade Horária Recente / Tráfego Atual).
-- Calibrated Power-Law Search & Evergreen Decay Curve (aligned with YouTube Analytics retention models).
-- Real-time snapshot delta tracker (calculates exact real-time VPH when multiple snapshots of a video exist).
+- Robust Statistical VPH (Views Per Hour) Engine using Rolling Window & Ordinary Least Squares (OLS) Linear Regression.
+- Neutralizes YouTube CDN batch synchronization and cache latency ('staircase effect').
+- Adaptive rolling window: 2-4 hours for active videos, expanding to 12-24 hours for long-tail/historical videos.
+- Comprehensive Edge-case handling (Insufficient samples fallback, negative audit delta clamping with 'audit_detected' flag, sub-0.1 jitter threshold).
+- Calibrated Power-Law Search & Evergreen Decay Curve baseline for single-snapshot videos.
 - Traffic Vitality Status (Viral, Tráfego Acelerado, Evergreen Ativo, Residual, Estagnado).
-- 90-Day Recent Traffic Calculation ('Views nos Últimos 90 Dias') to reveal active evergreen velocity.
+- 90-Day Recent Traffic Calculation ('Views nos Últimos 90 Dias').
 - Daily, Monthly, and Annual passive traffic projections.
 """
 
 import re
 import math
 from datetime import datetime, timezone, timedelta
-from typing import Dict, Any, Optional, Union, Tuple
+from typing import Dict, Any, Optional, Union, Tuple, List
 
-# In-memory snapshot storage for real-time delta tracking across cycles
+# In-memory snapshot history storage for real-time statistical OLS VPH tracking across cycles
+_VIDEO_SNAPSHOT_HISTORY: Dict[str, List[Tuple[float, int]]] = {}
+
+# Backward-compatibility alias
 _VIDEO_SNAPSHOTS: Dict[str, Tuple[float, int]] = {}
 
 def record_video_snapshot(video_id: str, view_count: int, timestamp: Optional[float] = None):
-    """Store timestamped snapshot to enable exact delta VPH calculation on subsequent passes."""
+    """
+    Store timestamped view count snapshots in a rolling history buffer for statistical OLS VPH calculation.
+    """
     if not video_id:
         return
     now_ts = timestamp or datetime.now(timezone.utc).timestamp()
-    _VIDEO_SNAPSHOTS[video_id] = (now_ts, view_count)
+    
+    # Update backward-compatible map
+    _VIDEO_SNAPSHOTS[video_id] = (now_ts, int(view_count))
+
+    if video_id not in _VIDEO_SNAPSHOT_HISTORY:
+        _VIDEO_SNAPSHOT_HISTORY[video_id] = []
+    
+    history = _VIDEO_SNAPSHOT_HISTORY[video_id]
+    if not history or history[-1][0] < (now_ts - 1.0):
+        history.append((now_ts, int(view_count)))
+    else:
+        history[-1] = (now_ts, int(view_count))
+
+    # Keep rolling buffer capped to the last 48 hours to manage memory
+    cutoff_48h = now_ts - (48.0 * 3600.0)
+    _VIDEO_SNAPSHOT_HISTORY[video_id] = [h for h in history if h[0] >= cutoff_48h]
+
+def calculate_ols_vph_from_history(
+    history: List[Tuple[float, int]],
+    now_ts: float,
+    min_window_hours: float = 4.0,
+    max_window_hours: float = 24.0
+) -> Tuple[Optional[float], bool]:
+    """
+    Computes statistical Views Per Hour (VPH) using Ordinary Least Squares (OLS)
+    over an adaptive rolling time window.
+    
+    Returns:
+        (calculated_vph, audit_detected_flag)
+    """
+    if not history or len(history) < 2:
+        return None, False
+
+    # 1. Rolling Window Selection (2 to 4 hours retroactive from current point)
+    cutoff_recent = now_ts - (min_window_hours * 3600.0)
+    window_points = [p for p in history if p[0] >= cutoff_recent]
+
+    # For older / long-tail videos or low variance in recent window, expand window to 12-24 hours
+    if len(window_points) < 3 or (window_points[-1][1] - window_points[0][1] == 0 and len(history) >= 3):
+        cutoff_expanded = now_ts - (max_window_hours * 3600.0)
+        window_points = [p for p in history if p[0] >= cutoff_expanded]
+
+    if len(window_points) < 2:
+        return None, False
+
+    t_0 = window_points[0][0]
+    t_last = window_points[-1][0]
+    delta_total_hours = (t_last - t_0) / 3600.0
+
+    # 3. Edge Cases: Insufficient samples (< 3 records) or total time span < 1 hour
+    if len(window_points) < 3 or delta_total_hours < 1.0:
+        if delta_total_hours >= 0.05: # At least 3 minutes between measurements
+            v_start = window_points[0][1]
+            v_end = window_points[-1][1]
+            delta_v = v_end - v_start
+            if delta_v < 0:
+                # YouTube audit / bot views removed
+                return 0.0, True
+            raw_vph = delta_v / delta_total_hours
+            if raw_vph < 0.1:
+                return 0.0, False
+            return raw_vph, False
+        else:
+            return None, False
+
+    # 2. Smoothing Algorithm: Ordinary Least Squares (OLS) Linear Regression
+    # Points (t_i, V_i) where t_i is elapsed time in hours relative to t_0
+    N = len(window_points)
+    sum_t = 0.0
+    sum_v = 0.0
+    sum_tv = 0.0
+    sum_t2 = 0.0
+
+    for ts_i, v_i in window_points:
+        t_i = (ts_i - t_0) / 3600.0 # Time in hours as floating-point
+        sum_t += t_i
+        sum_v += float(v_i)
+        sum_tv += (t_i * float(v_i))
+        sum_t2 += (t_i * t_i)
+
+    # Slope formula: m = [ N * Σ(t * V) - (Σt * ΣV) ] / [ N * Σ(t²) - (Σt)² ]
+    denom = (N * sum_t2) - (sum_t * sum_t)
+    if abs(denom) < 1e-9:
+        # Fallback to direct extreme difference
+        delta_v = window_points[-1][1] - window_points[0][1]
+        if delta_v < 0:
+            return 0.0, True
+        raw_vph = delta_v / max(0.01, delta_total_hours)
+        return (0.0 if raw_vph < 0.1 else raw_vph), False
+
+    slope_m = ((N * sum_tv) - (sum_t * sum_v)) / denom
+
+    # Edge Case: YouTube Audit (Negative slope) -> Clamp to 0 and signal audit
+    if slope_m < 0:
+        return 0.0, True
+
+    # Edge Case: Near zero (< 0.1 VPH) -> Clamp to 0 to prevent floating-point noise
+    if slope_m < 0.1:
+        return 0.0, False
+
+    return slope_m, False
 
 def parse_relative_time_text(text: str) -> Optional[float]:
     """
@@ -39,7 +146,6 @@ def parse_relative_time_text(text: str) -> Optional[float]:
         return None
     clean = text.lower().strip()
     
-    # Extract integer or float number
     nums = re.findall(r"(\d+(?:[.,]\d+)?)", clean)
     if not nums:
         if "ontem" in clean or "yesterday" in clean:
@@ -93,11 +199,12 @@ def calculate_video_metrics(
 ) -> Dict[str, Any]:
     """
     Calculate high-precision, calibrated performance metrics for a YouTube video:
-    - VPH (Views per Hour) measuring RECENT / ACTIVE ongoing velocity (vitality of current traffic).
-    - 90-Day Views Volume & Daily Pace ('Views nos Últimos 90 Dias')
-    - Current Daily Traffic Estimate (Views/dia correntes)
-    - Monthly & Yearly Traffic Projections
-    - Traffic Vitality Status (Viral, Tráfego Acelerado, Evergreen Ativo, Residual, Estagnado)
+    - VPH (Views per Hour) using OLS linear regression across rolling windows.
+    - Audit detection flag when YouTube removes views.
+    - 90-Day Views Volume & Daily Pace ('Views nos Últimos 90 Dias').
+    - Current Daily Traffic Estimate (Views/dia correntes).
+    - Monthly & Yearly Traffic Projections.
+    - Traffic Vitality Status (Viral, Tráfego Acelerado, Evergreen Ativo, Residual, Estagnado).
     """
     now = datetime.now(timezone.utc)
     now_ts = now.timestamp()
@@ -147,21 +254,15 @@ def calculate_video_metrics(
 
     hours_active = max(0.25, days_active * 24.0)
 
-    # 1. Check Real-Time Snapshot Delta (if video was observed earlier in this session)
-    exact_delta_vph = None
-    if video_id and video_id in _VIDEO_SNAPSHOTS:
-        prev_ts, prev_views = _VIDEO_SNAPSHOTS[video_id]
-        time_elapsed_hours = (now_ts - prev_ts) / 3600.0
-        if time_elapsed_hours >= 0.05: # At least 3 minutes between measurements
-            delta_views = max(0, view_count - prev_views)
-            exact_delta_vph = delta_views / time_elapsed_hours
-
-    # Record current snapshot for future passes
+    # 1. Statistical OLS VPH Calculation via Rolling Window History
+    ols_vph = None
+    audit_detected = False
     if video_id:
-        _VIDEO_SNAPSHOTS[video_id] = (now_ts, view_count)
+        record_video_snapshot(video_id, view_count, now_ts)
+        history = _VIDEO_SNAPSHOT_HISTORY.get(video_id, [])
+        ols_vph, audit_detected = calculate_ols_vph_from_history(history, now_ts)
 
-    # 2. Calibrated High-Precision Recent VPH & Traffic Vitality Engine (Power-Law Decay Model)
-    # This reflects real-world YouTube audience retention curves.
+    # 2. Calibrated Power-Law Search & Evergreen Decay Curve baseline (for initial pass)
     if hours_active <= 72.0:
         # Launch phase (0 to 72 hours): Peak initial launch velocity
         modeled_vph = float(view_count) / hours_active
@@ -190,7 +291,6 @@ def calculate_video_metrics(
         views_90d = min(int(view_count), max(10, int(daily_rate * 90.0)))
     else:
         # Historical / Long-Tail phase (> 1 year to 10+ years):
-        # Power-law decay curve V(t) ∝ t^-0.85
         years_old = max(1.0, days_active / 365.25)
         lifetime_daily = float(view_count) / days_active
         retention = max(0.015, 0.12 / math.pow(years_old, 0.85))
@@ -198,18 +298,26 @@ def calculate_video_metrics(
         modeled_vph = daily_rate / 24.0
         views_90d = min(int(view_count), max(5, int(daily_rate * 90.0)))
 
-    # Final VPH: Prefer exact real delta if available, otherwise calibrated ongoing velocity
-    final_vph = exact_delta_vph if exact_delta_vph is not None else modeled_vph
+    # Final VPH: Prefer empirical OLS regression from snapshot window if available
+    if ols_vph is not None:
+        final_vph = ols_vph
+        daily_rate = final_vph * 24.0
+    else:
+        final_vph = modeled_vph
 
     # 3. Traffic Projections
     lifetime_daily = float(view_count) / max(1.0, days_active)
     monthly_avg = daily_rate * 30.416
     yearly_avg = daily_rate * 365.25
 
-    # 4. Traffic Vitality & Velocity Classification (vidIQ / YouTube Traffic Tiers)
+    # 4. Traffic Vitality & Velocity Classification
     is_active_traffic = final_vph >= 0.5 or daily_rate >= 12.0
 
-    if final_vph >= 50.0:
+    if audit_detected:
+        velocity_badge = "⚠️ Auditoria YouTube"
+        velocity_class = "stagnant"
+        vitality_desc = "Auditoria de visualizações detectada (remoção de views inválidas)."
+    elif final_vph >= 50.0:
         velocity_badge = "🔥 Viral em Alta"
         velocity_class = "viral"
         vitality_desc = "Vídeo em forte aceleração de tráfego recente."
@@ -251,7 +359,8 @@ def calculate_video_metrics(
         "velocity_badge": velocity_badge,
         "velocity_class": velocity_class,
         "vitality_desc": vitality_desc,
-        "is_active_traffic": is_active_traffic
+        "is_active_traffic": is_active_traffic,
+        "audit_detected": audit_detected
     }
 
 def format_number(num: Union[float, int, str]) -> str:
