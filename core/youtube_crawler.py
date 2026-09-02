@@ -17,6 +17,9 @@ import time
 import random
 import logging
 import gc
+import json
+import re
+import requests
 from typing import List, Dict, Any, Callable, Optional, Set
 import scrapetube
 import yt_dlp
@@ -376,6 +379,70 @@ class YouTubeCrawler:
             "top_comments": top_comments
         }
 
+    def _fetch_watch_page_data_fallback(self, video_id: str, hl: str = "pt", gl: str = "BR") -> Dict[str, Any]:
+        """
+        Direct high-speed HTTP extraction for video details (description, title, author, views)
+        directly from YouTube watch page HTML payload when yt-dlp is rate-limited or fails.
+        """
+        fallback_data = {"description": "", "title": "", "channel_name": "", "view_count": 0}
+        try:
+            url = f"https://www.youtube.com/watch?v={video_id}"
+            headers = {
+                "User-Agent": self._get_random_user_agent(),
+                "Accept-Language": f"{hl}-{gl},{hl};q=0.9,en-US;q=0.8,en;q=0.7"
+            }
+            proxies = {"http": self.proxy_url, "https": self.proxy_url} if self.proxy_url else None
+            resp = requests.get(url, headers=headers, proxies=proxies, timeout=3.5)
+            if resp.status_code == 200:
+                html = resp.text
+                
+                # 1. Try ytInitialPlayerResponse
+                m_player = re.search(r'var ytInitialPlayerResponse\s*=\s*({.*?});', html)
+                if m_player:
+                    try:
+                        p_data = json.loads(m_player.group(1))
+                        v_details = p_data.get("videoDetails", {})
+                        if v_details:
+                            fallback_data["description"] = v_details.get("shortDescription", "")
+                            fallback_data["title"] = v_details.get("title", "")
+                            fallback_data["channel_name"] = v_details.get("author", "")
+                            views_str = v_details.get("viewCount")
+                            if views_str and str(views_str).isdigit():
+                                fallback_data["view_count"] = int(views_str)
+                    except Exception:
+                        pass
+
+                # 2. Try ytInitialData if description is still empty
+                if not fallback_data["description"]:
+                    m_initial = re.search(r'var ytInitialData\s*=\s*({.*?});</script>', html)
+                    if m_initial:
+                        try:
+                            i_data = json.loads(m_initial.group(1))
+                            def _find_desc(obj):
+                                if isinstance(obj, dict):
+                                    if "description" in obj and isinstance(obj["description"], dict) and "runs" in obj["description"]:
+                                        return "".join([r.get("text", "") for r in obj["description"]["runs"]])
+                                    if "shortDescription" in obj and isinstance(obj["shortDescription"], str):
+                                        return obj["shortDescription"]
+                                    for v in obj.values():
+                                        res = _find_desc(v)
+                                        if res:
+                                            return res
+                                elif isinstance(obj, list):
+                                    for item in obj:
+                                        res = _find_desc(item)
+                                        if res:
+                                            return res
+                                return ""
+                            d_text = _find_desc(i_data)
+                            if d_text:
+                                fallback_data["description"] = d_text
+                        except Exception:
+                            pass
+        except Exception as e:
+            logger.debug(f"Watch page fallback error for video {video_id}: {e}")
+        return fallback_data
+
     def get_video_deep_details(self, video_url: str, hl: str = "pt", gl: str = "BR", retries: int = 1) -> Dict[str, Any]:
         """
         Fetch video metadata & comments with automatic retry and backoff.
@@ -397,6 +464,8 @@ class YouTubeCrawler:
         opts["http_headers"] = {
             "Accept-Language": f"{hl}-{gl},{hl};q=0.9,en;q=0.8"
         }
+
+        vid_id = (video_url.split("v=")[-1].split("&")[0] if "v=" in video_url else "")
 
         for attempt in range(retries + 1):
             if self._is_stopped:
@@ -425,10 +494,14 @@ class YouTubeCrawler:
                         if not info["pinned_comment"] and comments:
                             info["pinned_comment"] = comments[0].get("text", "")
 
-                        # High-Precision InnerTube fallback: if yt-dlp extracted no comments, use Entity Framework parser
-                        if not info["pinned_comment"] and not info["top_comments"]:
-                            vid_id = meta.get("id") or (video_url.split("v=")[-1].split("&")[0] if "v=" in video_url else "")
-                            if vid_id:
+                        # High-Precision InnerTube fallback: if yt-dlp extracted no comments or no description
+                        if vid_id:
+                            if not info["description"]:
+                                fb = self._fetch_watch_page_data_fallback(vid_id, hl=hl, gl=gl)
+                                if fb.get("description"):
+                                    info["description"] = fb["description"]
+
+                            if not info["pinned_comment"] and not info["top_comments"]:
                                 c_info = self._fetch_innertube_comments(vid_id, hl=hl, gl=gl)
                                 if c_info.get("pinned_comment"):
                                     info["pinned_comment"] = c_info["pinned_comment"]
@@ -446,6 +519,24 @@ class YouTubeCrawler:
                 else:
                     logger.debug(f"yt-dlp extract error for {video_url}: {e}")
                     time.sleep(0.3)
+
+        # Fallback if yt-dlp failed completely
+        if vid_id and not info["description"]:
+            fb = self._fetch_watch_page_data_fallback(vid_id, hl=hl, gl=gl)
+            if fb.get("description"):
+                info["description"] = fb["description"]
+            if not info["title"] and fb.get("title"):
+                info["title"] = fb["title"]
+            if not info["channel_name"] and fb.get("channel_name"):
+                info["channel_name"] = fb["channel_name"]
+            if not info["view_count"] and fb.get("view_count"):
+                info["view_count"] = fb["view_count"]
+
+            c_info = self._fetch_innertube_comments(vid_id, hl=hl, gl=gl)
+            if c_info.get("pinned_comment"):
+                info["pinned_comment"] = c_info["pinned_comment"]
+            if c_info.get("top_comments"):
+                info["top_comments"] = c_info["top_comments"]
 
         return info
 
@@ -529,11 +620,31 @@ class YouTubeCrawler:
                 video_id=v_item.get("id")
             )
 
-            # Extract domains strictly from Pinned Comment and Description
-            pinned_domains = self.extractor.process_text_for_domains(pinned_comment, source_location="📌 Comentário Fixado") if pinned_comment else []
-            desc_domains = self.extractor.process_text_for_domains(description, source_location="📄 Descrição")
+            # Extract domains comprehensively from Pinned Comment, Description, and Top Comments
+            combined_extracted_domains = []
+            seen_video_domains = set()
 
-            combined_extracted_domains = pinned_domains + desc_domains
+            # 1. Pinned Comment
+            if pinned_comment:
+                for d in self.extractor.process_text_for_domains(pinned_comment, source_location="📌 Comentário Fixado"):
+                    if d["root_domain"] not in seen_video_domains:
+                        seen_video_domains.add(d["root_domain"])
+                        combined_extracted_domains.append(d)
+
+            # 2. Video Description
+            if description:
+                for d in self.extractor.process_text_for_domains(description, source_location="📄 Descrição"):
+                    if d["root_domain"] not in seen_video_domains:
+                        seen_video_domains.add(d["root_domain"])
+                        combined_extracted_domains.append(d)
+
+            # 3. Top Comments
+            for comm in deep_info.get("top_comments", []):
+                if comm and comm != pinned_comment:
+                    for d in self.extractor.process_text_for_domains(comm, source_location="💬 Comentário"):
+                        if d["root_domain"] not in seen_video_domains:
+                            seen_video_domains.add(d["root_domain"])
+                            combined_extracted_domains.append(d)
 
             validated_domains_for_video = []
             for d in combined_extracted_domains:
@@ -815,11 +926,31 @@ class YouTubeCrawler:
                     logger.debug(f"Skipped video outside year range {start_yr}-{end_yr} (upload_year={v_year}): {title}")
                     continue
 
-            # Extract domains strictly from Pinned Comment and Description
-            pinned_domains = self.extractor.process_text_for_domains(pinned_comment, source_location="📌 Comentário Fixado") if pinned_comment else []
-            desc_domains = self.extractor.process_text_for_domains(description, source_location="📄 Descrição")
+            # Extract domains comprehensively from Pinned Comment, Description, and Top Comments
+            combined_extracted_domains = []
+            seen_video_domains = set()
 
-            combined_extracted_domains = pinned_domains + desc_domains
+            # 1. Pinned Comment
+            if pinned_comment:
+                for d in self.extractor.process_text_for_domains(pinned_comment, source_location="📌 Comentário Fixado"):
+                    if d["root_domain"] not in seen_video_domains:
+                        seen_video_domains.add(d["root_domain"])
+                        combined_extracted_domains.append(d)
+
+            # 2. Video Description
+            if description:
+                for d in self.extractor.process_text_for_domains(description, source_location="📄 Descrição"):
+                    if d["root_domain"] not in seen_video_domains:
+                        seen_video_domains.add(d["root_domain"])
+                        combined_extracted_domains.append(d)
+
+            # 3. Top Comments
+            for comm in deep_info.get("top_comments", []):
+                if comm and comm != pinned_comment:
+                    for d in self.extractor.process_text_for_domains(comm, source_location="💬 Comentário"):
+                        if d["root_domain"] not in seen_video_domains:
+                            seen_video_domains.add(d["root_domain"])
+                            combined_extracted_domains.append(d)
 
             # Validate each domain or Instagram account
             validated_domains_for_video = []

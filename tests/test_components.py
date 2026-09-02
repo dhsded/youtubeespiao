@@ -438,7 +438,7 @@ class TestYoutubeEspiaoCore(unittest.TestCase):
         Acesse também www.ferramentaclicavel.org/app
         Instagram oficial: @perfilteste_expirado123
         Link curto: bit.ly/meulink456
-        Email para contato: contato@ignorar.com
+        Email para contato: contato@gmail.com
         Arquivo para download: imagem.png e instalador.exe
         """
         urls = extractor.extract_urls(sample_text)
@@ -450,7 +450,7 @@ class TestYoutubeEspiaoCore(unittest.TestCase):
         self.assertTrue(any(d.get("is_instagram") and "perfilteste_expirado123" in d.get("root_domain", "") for d in domains))
         self.assertNotIn("imagem.png", urls)
         self.assertNotIn("instalador.exe", urls)
-        self.assertNotIn("ignorar.com", extracted)
+        self.assertNotIn("gmail.com", extracted)
 
     def test_autosave_manager(self):
         """Test AutoSave session persistence and recovery."""
@@ -862,6 +862,50 @@ class TestYoutubeEspiaoCore(unittest.TestCase):
         self.assertEqual(loaded["excluded_countries"], ["hi", "ru", "ar"])
         self.assertEqual(loaded["year_start"], 2021)
         self.assertTrue(loaded["unlimited_videos"])
+
+    def test_robust_domain_extraction_features(self):
+        """Test clickable hyperlinks only for web domains, Instagram @handles allowance, and redirect unwraps."""
+        extractor = DomainExtractor()
+
+        # 1. Clickable hyperlinks (https://, http://, www.)
+        sample_clickable = "Acesse https://cursodepianoonline.com.br ou http://lojadomarcio.com e tambem www.novocurso.org/promo"
+        res_click = extractor.process_text_for_domains(sample_clickable)
+        roots_click = [d["root_domain"] for d in res_click]
+        self.assertIn("cursodepianoonline.com.br", roots_click)
+        self.assertIn("lojadomarcio.com", roots_click)
+        self.assertIn("novocurso.org", roots_click)
+
+        # 2. Non-clickable plain text domain mentions must be ignored for web
+        sample_plain = "Apenas mencao em texto: cursodemarketing.com.br ou site.online e contato@empresa.com.br"
+        res_plain = extractor.process_text_for_domains(sample_plain)
+        roots_plain = [d["root_domain"] for d in res_plain]
+        self.assertNotIn("cursodemarketing.com.br", roots_plain)
+        self.assertNotIn("site.online", roots_plain)
+        self.assertNotIn("empresa.com.br", roots_plain)
+
+        # 3. Instagram @handles and profile links allowed
+        sample_ig = "Siga nosso insta @perfil_oficial_123 e https://instagram.com/canal_oficial"
+        res_ig = extractor.process_text_for_domains(sample_ig)
+        roots_ig = [d["root_domain"] for d in res_ig]
+        self.assertIn("instagram.com/perfil_oficial_123", roots_ig)
+        self.assertIn("instagram.com/canal_oficial", roots_ig)
+
+        # 4. Non-web file rejection alongside valid clickable domain
+        res_files = extractor.process_text_for_domains("Baixe www.relatorio.pdf e musica.mp3 no site https://novaloja.net")
+        roots_files = [d["root_domain"] for d in res_files]
+        self.assertIn("novaloja.net", roots_files)
+        self.assertNotIn("relatorio.pdf", roots_files)
+
+        # 5. YouTube & Google redirect unwrapping
+        yt_redirect_text = "Link: https://www.youtube.com/redirect?q=https%3A%2F%2Fcursoteste123.com.br%2Fpromo&redir_token=xyz"
+        res_yt = extractor.process_text_for_domains(yt_redirect_text)
+        roots_yt = [d["root_domain"] for d in res_yt]
+        self.assertIn("cursoteste123.com.br", roots_yt)
+
+        # 6. Trailing punctuation and parentheses
+        res_punct = extractor.process_text_for_domains("Veja nosso site (https://www.exemplo.com.br/contato), aproveite!")
+        roots_punct = [d["root_domain"] for d in res_punct]
+        self.assertIn("exemplo.com.br", roots_punct)
 
 if __name__ == "__main__":
     unittest.main()
