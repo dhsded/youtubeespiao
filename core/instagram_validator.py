@@ -19,11 +19,21 @@ RESERVED_INSTAGRAM_HANDLES = {
     "business", "guidelines", "safety", "shopping", "home"
 }
 
-# Regex to capture Instagram URLs and @mentions (avoiding emails)
-IG_URL_REGEX = re.compile(
-    r'(?:(?:https?:\/\/)?(?:www\.)?(?:instagram\.com|instagr\.am)\/|(?:^|[\s\(\[\{\,\;:])@)([a-zA-Z0-9_\.]{2,30})',
+# Regex to capture genuine CLICKABLE Instagram URLs on YouTube (must start with https://, http://, or www.)
+IG_CLICKABLE_URL_REGEX = re.compile(
+    r'(?:https?:\/\/|www\.)(?:instagram\.com|instagr\.am)\/([a-zA-Z0-9_\.]{2,30})',
     re.IGNORECASE
 )
+
+# Regex to capture explicit Instagram handle mentions (e.g. "instagram: @handle", "insta: @handle", "ig @handle")
+# Strictly prevents false positive mentions from Twitter, Telegram, Discord, editors, or credits.
+IG_EXPLICIT_MENTION_REGEX = re.compile(
+    r'(?:^|[\s\(\[\{\,\;:])(?:instagram|insta|ig)(?:\s+oficial|\s+ofc)?\s*[:\-]?\s*@([a-zA-Z0-9_\.]{2,30})',
+    re.IGNORECASE
+)
+
+# Backward-compatibility alias
+IG_URL_REGEX = IG_CLICKABLE_URL_REGEX
 
 class InstagramValidator:
     def __init__(self, timeout: float = 4.0):
@@ -37,13 +47,18 @@ class InstagramValidator:
         self._cache: Dict[str, Dict[str, Any]] = {}
 
     def extract_handles_from_text(self, text: str) -> List[str]:
-        """Extract valid Instagram handles from a block of text."""
+        """
+        Extract valid Instagram handles from text.
+        Captures genuine clickable Instagram URLs (https://instagram.com/...) and explicit Instagram mentions (instagram: @handle).
+        Strictly prevents false positive non-clickable plain-text mentions from Twitter, Telegram, editors, or credits.
+        """
         if not text:
             return []
         
-        matches = IG_URL_REGEX.findall(text)
+        matches = IG_CLICKABLE_URL_REGEX.findall(text)
+        matches.extend(IG_EXPLICIT_MENTION_REGEX.findall(text))
+            
         cleaned_handles = []
-        
         for handle in matches:
             h = handle.strip().strip("/").rstrip(".,;:!?)\"'").lower()
             if not h or len(h) < 2 or h in RESERVED_INSTAGRAM_HANDLES:

@@ -36,6 +36,7 @@ from core.profile_manager import (
     get_named_profiles, save_named_profile, delete_named_profile
 )
 from ui.video_table_model import VideoTableView, DomainTableView
+from ui.seo_table_view import SeoAuthorityTableView
 from ui.settings_tab import APP_SETTINGS
 
 class CountryExclusionDialog(QDialog):
@@ -102,6 +103,147 @@ class CountryExclusionDialog(QDialog):
             if item.checkState() == Qt.CheckState.Checked:
                 result.append(code)
         return result
+
+
+class DomainExclusionDialog(QDialog):
+    """Dialog allowing user to manage domain and Instagram handle exclusions, including multi-item pasting."""
+    exclusions_updated = pyqtSignal(list)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("🚫 Gerenciar Lista de Exclusão de Domínios & Perfis")
+        self.setMinimumSize(540, 560)
+        self.added_domains: List[str] = []
+        self.all_custom_items: List[str] = []
+        self._init_ui()
+
+    def _init_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(18, 16, 18, 16)
+        layout.setSpacing(12)
+
+        info_title = QLabel("🚫 Exclusão de Domínios e Perfis do Instagram")
+        info_title.setStyleSheet("font-size: 15px; font-weight: 800; color: #F1F1F1;")
+        layout.addWidget(info_title)
+
+        info_lbl = QLabel(
+            "Adicione domínios ou perfis para serem <b>ignorados para sempre</b> em todas as varreduras.<br>"
+            "<span style='color: #94A3B8;'>Você pode colar vários domínios de uma vez, separados por <b>vírgula</b>, "
+            "<b>ponto e vírgula</b> ou <b>quebra de linha</b> (ex: <i>site1.com, site2.com, @perfil_ig</i>).</span>"
+        )
+        info_lbl.setWordWrap(True)
+        layout.addWidget(info_lbl)
+
+        self.txt_input = QPlainTextEdit()
+        self.txt_input.setPlaceholderText(
+            "Cole ou digite aqui um ou múltiplos domínios/perfis...\n"
+            "Exemplo:\n"
+            "meusite.com.br, lojaexemplo.com\n"
+            "@perfilantigo\n"
+            "cursodesativado.org; outrolink.net"
+        )
+        self.txt_input.setMaximumHeight(100)
+        layout.addWidget(self.txt_input)
+
+        btn_add = QPushButton("➕ Adicionar à Lista de Exclusão")
+        btn_add.setObjectName("btn_start_action")
+        btn_add.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        btn_add.clicked.connect(self._on_add_clicked)
+        layout.addWidget(btn_add)
+
+        line = QFrame()
+        line.setFrameShape(QFrame.Shape.HLine)
+        line.setFrameShadow(QFrame.Shadow.Sunken)
+        line.setStyleSheet("color: #383838;")
+        layout.addWidget(line)
+
+        list_header = QHBoxLayout()
+        self.lbl_count = QLabel("📋 Domínios Ignorados Customizados:")
+        self.lbl_count.setStyleSheet("font-weight: 700; color: #E2E8F0;")
+        list_header.addWidget(self.lbl_count)
+
+        list_header.addStretch()
+
+        self.input_search = QLineEdit()
+        self.input_search.setPlaceholderText("🔍 Filtrar lista...")
+        self.input_search.setFixedWidth(180)
+        self.input_search.textChanged.connect(self._filter_list)
+        list_header.addWidget(self.input_search)
+        layout.addLayout(list_header)
+
+        self.list_widget = QListWidget()
+        self.list_widget.setSelectionMode(QListWidget.SelectionMode.ExtendedSelection)
+        layout.addWidget(self.list_widget, 1)
+
+        btn_box = QHBoxLayout()
+        self.btn_remove = QPushButton("🗑️ Remover Selecionado(s) da Exclusão")
+        self.btn_remove.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.btn_remove.clicked.connect(self._on_remove_clicked)
+        btn_box.addWidget(self.btn_remove)
+
+        btn_box.addStretch()
+
+        btn_close = QPushButton("Concluir")
+        btn_close.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        btn_close.clicked.connect(self.accept)
+        btn_box.addWidget(btn_close)
+        layout.addLayout(btn_box)
+
+        self._load_exclusions()
+
+    def _on_add_clicked(self):
+        text = self.txt_input.toPlainText().strip()
+        if not text:
+            return
+        from core.domain_extractor import add_to_exclusion_list, parse_multiple_exclusion_targets
+        targets = parse_multiple_exclusion_targets(text)
+        if not targets:
+            QMessageBox.warning(self, "Aviso", "Nenhum domínio ou perfil válido identificado no texto inserido.")
+            return
+
+        add_to_exclusion_list(targets)
+        self.added_domains.extend(targets)
+        self.txt_input.clear()
+        self._load_exclusions()
+        self.exclusions_updated.emit(targets)
+        QMessageBox.information(
+            self,
+            "Exclusão Atualizada",
+            f"{len(targets)} domínio(s)/perfil(is) adicionado(s) à Lista de Exclusão com sucesso!"
+        )
+
+    def _on_remove_clicked(self):
+        selected_items = self.list_widget.selectedItems()
+        if not selected_items:
+            QMessageBox.information(self, "Aviso", "Selecione ao menos um item na lista para remover da exclusão.")
+            return
+
+        targets = [item.text().strip() for item in selected_items if item.text().strip()]
+        if not targets:
+            return
+
+        from core.domain_extractor import remove_from_exclusion_list
+        remove_from_exclusion_list(targets)
+        self._load_exclusions()
+        QMessageBox.information(
+            self,
+            "Removido",
+            f"{len(targets)} item(ns) removido(s) da Lista de Exclusão!"
+        )
+
+    def _load_exclusions(self):
+        from core.domain_extractor import get_custom_exclusions
+        self.all_custom_items = get_custom_exclusions()
+        self.lbl_count.setText(f"📋 Domínios Ignorados Customizados ({len(self.all_custom_items)}):")
+        self._filter_list(self.input_search.text())
+
+    def _filter_list(self, query: str = ""):
+        self.list_widget.clear()
+        q = (query or "").strip().lower()
+        for item in self.all_custom_items:
+            if not q or q in item.lower():
+                self.list_widget.addItem(item)
+
 
 class CrawlerThread(QThread):
     """Background worker thread supporting Keywords, Channel Harvester, Live Browser Signals & Telemetry."""
@@ -432,12 +574,22 @@ class HunterTab(QWidget):
         self.domain_table.buy_domain_requested.connect(self._on_buy_domain_requested)
         self.domain_table.open_video_requested.connect(self._on_open_video_requested)
         self.domain_table.domain_excluded_requested.connect(self._on_domain_excluded)
+        self.domain_table.domains_excluded_requested.connect(self._on_domains_excluded)
+        self.domain_table.manage_exclusions_requested.connect(self._open_domain_exclusion_dialog)
         self.domain_table.filter_videos_by_domain_requested.connect(self._on_filter_videos_by_domain)
         domain_layout.addWidget(self.domain_table)
 
         self.results_tabs.addTab(domain_container, "💎 Domínios & Instagrams Expirados")
 
-        # Tab 3: Real-time logs
+        # Tab 3: SEO Authority Metrics (DA, PA, Backlinks)
+        self.seo_table = SeoAuthorityTableView()
+        self.seo_table.buy_domain_requested.connect(self._on_buy_domain_requested)
+        self.seo_table.domain_excluded_requested.connect(self._on_domain_excluded)
+        self.seo_table.domains_excluded_requested.connect(self._on_domains_excluded)
+        self.seo_table.manage_exclusions_requested.connect(self._open_domain_exclusion_dialog)
+        self.results_tabs.addTab(self.seo_table, "📊 Métricas SEO (DA / PA / Backlinks)")
+
+        # Tab 4: Real-time logs
         self.log_view = QPlainTextEdit()
         self.log_view.setObjectName("log_view")
         self.log_view.setReadOnly(True)
@@ -450,18 +602,45 @@ class HunterTab(QWidget):
 
     def _create_stats_header(self) -> QHBoxLayout:
         layout = QHBoxLayout()
-        layout.setSpacing(12)
+        layout.setSpacing(10)
 
         self.card_videos, self.val_videos = self._build_stat_card("VÍDEOS MINERADOS", "0", "stat_card", "stat_val_videos")
         self.card_views, self.val_views = self._build_stat_card("VIEWS TOTAIS", "0", "stat_card", "stat_val_views")
-        self.card_domains, self.val_domains = self._build_stat_card("DOMÍNIOS / IGs", "0", "stat_card", "stat_val_domains")
-        self.card_avail, self.val_avail = self._build_stat_card("🟢 DISPONÍVEIS P/ COMPRA", "0", "stat_card_available", "stat_val_available")
+        self.card_domains, self.val_domains = self._build_stat_card("TOTAL LINKS / IGs", "0", "stat_card", "stat_val_domains")
+        self.card_avail, self.val_avail = self._build_stat_card("🟢 DOMÍNIOS P/ COMPRA", "0", "stat_card_available", "stat_val_available")
+        self.card_instagram, self.val_instagram = self._build_stat_card("📸 INSTAGRAMS LIVRES", "0", "stat_card_instagram", "stat_val_instagram")
+
+        # Interactive click-to-filter
+        for card, tip in [
+            (self.card_videos, "Clique para ver a tabela de vídeos"),
+            (self.card_domains, "Clique para ver todos os domínios e perfis na tabela"),
+            (self.card_avail, "Clique para ver e auditar métricas SEO (DA / PA / Backlinks) dos domínios disponíveis"),
+            (self.card_instagram, "Clique para filtrar apenas perfis do Instagram livres"),
+        ]:
+            card.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+            card.setToolTip(tip)
+
+        self.card_videos.mousePressEvent = lambda _: self.results_tabs.setCurrentIndex(0)
+        self.card_domains.mousePressEvent = lambda _: self._filter_domains_by_type(0)
+        self.card_avail.mousePressEvent = lambda _: self._on_card_avail_clicked()
+        self.card_instagram.mousePressEvent = lambda _: self._filter_domains_by_type(2)
 
         layout.addWidget(self.card_videos)
         layout.addWidget(self.card_views)
         layout.addWidget(self.card_domains)
         layout.addWidget(self.card_avail)
+        layout.addWidget(self.card_instagram)
         return layout
+
+    def _on_card_avail_clicked(self):
+        """Switch directly to SEO Authority Metrics tab (DA / PA / Backlinks) with available domains."""
+        self.results_tabs.setCurrentWidget(self.seo_table)
+        self.domain_table.combo_filter.setCurrentIndex(1)
+
+    def _filter_domains_by_type(self, filter_index: int):
+        """Switch to Domains tab and apply selected filter index."""
+        self.results_tabs.setCurrentIndex(1)
+        self.domain_table.combo_filter.setCurrentIndex(filter_index)
 
     def _build_stat_card(self, title: str, init_val: str, frame_id: str, val_id: str) -> (QFrame, QLabel):
         frame = QFrame()
@@ -567,6 +746,12 @@ class HunterTab(QWidget):
         self.btn_exclude_countries.clicked.connect(self._open_country_exclusion_dialog)
         row2.addWidget(self.btn_exclude_countries)
 
+        self.btn_exclude_domains = QPushButton("🚫 Excluir Domínios...")
+        self.btn_exclude_domains.setToolTip("Adicionar múltiplos domínios ou perfis à lista de exclusão permanente.")
+        self.btn_exclude_domains.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.btn_exclude_domains.clicked.connect(self._open_domain_exclusion_dialog)
+        row2.addWidget(self.btn_exclude_domains)
+
         row2.addSpacing(6)
 
         lbl_dt = QLabel("📅 Filtro de Datas:")
@@ -650,15 +835,15 @@ class HunterTab(QWidget):
         row3.addWidget(lbl_lim)
 
         self.spin_max = QSpinBox()
-        self.spin_max.setRange(5, 100000)
+        self.spin_max.setRange(5, 10000000)
         self.spin_max.setValue(50)
-        self.spin_max.setSingleStep(50)
+        self.spin_max.setSingleStep(500)
         self.spin_max.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.spin_max.setFixedWidth(85)
+        self.spin_max.setFixedWidth(115)
         row3.addWidget(self.spin_max)
 
-        self.chk_unlimited = QCheckBox("♾️ Todos os Vídeos")
-        self.chk_unlimited.setToolTip("Busca todos os vídeos disponíveis do canal ou termo (até 100.000).")
+        self.chk_unlimited = QCheckBox("♾️ Todos os Vídeos (até 10 Milhões)")
+        self.chk_unlimited.setToolTip("Busca todos os vídeos disponíveis do canal ou termo (até 10.000.000).")
         self.chk_unlimited.toggled.connect(lambda checked: self.spin_max.setEnabled(not checked))
         row3.addWidget(self.chk_unlimited)
 
@@ -951,6 +1136,11 @@ class HunterTab(QWidget):
                 self.btn_exclude_countries.setText("🚫 Excluir Países...")
                 self.btn_exclude_countries.setStyleSheet("")
 
+    def _open_domain_exclusion_dialog(self):
+        dialog = DomainExclusionDialog(self)
+        dialog.exclusions_updated.connect(self._on_domains_excluded)
+        dialog.exec()
+
     def _on_search_mode_changed(self):
         mode = self.combo_mode.currentData()
         self.combo_sort.clear()
@@ -1092,7 +1282,7 @@ class HunterTab(QWidget):
             year_range = None
 
         min_views = self.get_min_views()
-        max_vids = 100000 if self.chk_unlimited.isChecked() else self.spin_max.value()
+        max_vids = 10000000 if self.chk_unlimited.isChecked() else self.spin_max.value()
         sort_by = self.combo_sort.currentData()
         fast_mode = self.chk_fast_mode.isChecked()
         include_related = self.chk_include_related.isChecked() if search_mode == "keywords" else False
@@ -1268,6 +1458,8 @@ class HunterTab(QWidget):
         if any(d.get("root_domain") == d_root and d.get("video_id") == v_id for d in self.all_domains):
             return
         self.all_domains.append(domain_dict)
+        if domain_dict.get("status") == "Disponível" and not domain_dict.get("is_instagram"):
+            self.seo_table.add_domain(domain_dict)
         if not self.is_background_mode:
             self.domain_table.set_domains(self.all_domains)
             self._update_stat_cards()
@@ -1280,7 +1472,8 @@ class HunterTab(QWidget):
     def _trigger_autosave(self):
         """Perform automatic atomic session save to disk and emergency backup in Downloads."""
         if self.all_videos or self.all_domains:
-            kws = [k.strip() for k in self.txt_keywords.toPlainText().splitlines() if k.strip()]
+            raw = self.input_target.text() if hasattr(self, 'input_target') else ""
+            kws = [k.strip() for k in raw.split(",") if k.strip()]
             self.autosave_manager.save_session(self.all_videos, self.all_domains, kws)
 
     def _restore_previous_session_if_any(self):
@@ -1296,14 +1489,17 @@ class HunterTab(QWidget):
                 self.all_domains = doms
                 self.video_table.set_videos(self.all_videos)
                 self.domain_table.set_domains(self.all_domains)
+                self.seo_table.set_domains(self.all_domains)
                 self._update_stat_cards()
                 self._append_log(f"📂 Sessão anterior recuperada com sucesso ({len(vids)} vídeos, {len(doms)} domínios salvos em {time_saved}).")
 
     def _on_progress_updated(self, current: int, total: int, message: str):
         if total > 0:
-            percent = int((current / total) * 100)
+            percent = min(100, int((current / total) * 100))
             self.progress_bar.setValue(percent)
         self.status_label.setText(message)
+        if any(token in message for token in ["ℹ️", "🏁", "Nenhum vídeo", "concluída", "finalizado"]):
+            self.lbl_active_keyword.setText(message)
 
     def _on_finished_crawl(self, summary: Dict[str, Any]):
         self.btn_start.setEnabled(True)
@@ -1321,30 +1517,62 @@ class HunterTab(QWidget):
         time_str = f"{mins:02d}:{secs:02d}"
         avg_str = f"{(elapsed / max(1, len(self.all_videos))):.1f}s/vídeo" if self.all_videos else "0s"
 
+        total_vids = len(self.all_videos)
+        total_doms = len(self.all_domains)
+        avail_doms = summary.get("available_domains", 0)
+
         self.lbl_telemetry.setText(f"✅ Concluído em {time_str}  •  ⚡ Média: {avg_str}")
-        self.lbl_active_keyword.setText("✅ Mineração finalizada com sucesso!")
-        self.lbl_active_progress_pill.setText("Concluído")
-        self.lbl_active_prefix.setText("✅ CONCLUÍDO:")
-        self.lbl_active_prefix.setStyleSheet("color: #34D399; font-weight: 800; font-size: 11px; letter-spacing: 0.5px;")
-        self.active_target_card.setStyleSheet("""
-            QFrame#active_target_card {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #064E3B, stop:0.5 #065F46, stop:1 #064E3B);
-                border: 2px solid #10B981;
-                border-radius: 8px;
-                padding: 6px 12px;
-            }
-        """)
-        self.status_label.setText(f"Varredura concluída em {time_str}! {len(self.all_videos)} vídeos e {len(self.all_domains)} oportunidades.")
-        self._append_log(f"✅ Mineração finalizada ({time_str})! Disponíveis: {summary.get('available_domains', 0)} | Total: {summary.get('total_domains', 0)}")
-        if self.isVisible() and not self.isMinimized():
+
+        if total_vids == 0:
+            # Explicit clear message when no videos are found
+            self.lbl_active_prefix.setText("ℹ️ SEM RESULTADOS:")
+            self.lbl_active_prefix.setStyleSheet("color: #F59E0B; font-weight: 800; font-size: 11px; letter-spacing: 0.5px;")
+            self.lbl_active_keyword.setText("O YouTube não encontrou nenhum vídeo adicional para os termos/filtros informados.")
+            self.lbl_active_progress_pill.setText("Finalizado")
+            self.active_target_card.setStyleSheet("""
+                QFrame#active_target_card {
+                    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #78350F, stop:0.5 #92400E, stop:1 #78350F);
+                    border: 2px solid #F59E0B;
+                    border-radius: 8px;
+                    padding: 6px 12px;
+                }
+            """)
+            self.status_label.setText("Busca finalizada: O YouTube não possui mais vídeos com os filtros atuais.")
+            self._append_log(f"⚠️ Varredura finalizada ({time_str}): Nenhum vídeo retornado pelo YouTube.")
             QMessageBox.information(
                 self,
-                "Mineração Concluída",
-                f"Varredura finalizada com sucesso!\n\n"
+                "Busca Finalizada (Sem Novos Vídeos)",
+                f"A varredura foi concluída!\n\n"
+                f"O YouTube não encontrou mais vídeos para os termos ou canais pesquisados com os filtros atuais.\n\n"
+                f"💡 Sugestões:\n"
+                f"• Verifique se a palavra-chave ou @handle do canal está digitada corretamente.\n"
+                f"• Reduza ou zere o filtro de 'Mín. Views'.\n"
+                f"• Se usou filtro de data específico (ex: este ano), altere para 'Todo o Período'."
+            )
+        else:
+            self.lbl_active_prefix.setText("✅ CONCLUÍDO:")
+            self.lbl_active_prefix.setStyleSheet("color: #34D399; font-weight: 800; font-size: 11px; letter-spacing: 0.5px;")
+            self.lbl_active_keyword.setText(f"Varredura finalizada: Todos os {total_vids} vídeos disponíveis no YouTube foram minerados!")
+            self.lbl_active_progress_pill.setText("Concluído")
+            self.active_target_card.setStyleSheet("""
+                QFrame#active_target_card {
+                    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #064E3B, stop:0.5 #065F46, stop:1 #064E3B);
+                    border: 2px solid #10B981;
+                    border-radius: 8px;
+                    padding: 6px 12px;
+                }
+            """)
+            self.status_label.setText(f"Varredura 100% finalizada: {total_vids} vídeos e {total_doms} oportunidades mineradas até o fim.")
+            self._append_log(f"✅ Mineração finalizada com sucesso ({time_str})! {total_vids} vídeos minerados | Disponíveis: {avail_doms} | Total: {total_doms}")
+            QMessageBox.information(
+                self,
+                "Mineração Concluída (Fim dos Vídeos)",
+                f"Varredura 100% finalizada com sucesso!\n\n"
+                f"Todos os vídeos disponíveis na plataforma para esta pesquisa foram minerados até o final.\n\n"
                 f"• Tempo total: {time_str} (Média: {avg_str})\n"
-                f"• Vídeos analisados: {len(self.all_videos)}\n"
-                f"• Domínios / Contas IG encontradas: {len(self.all_domains)}\n"
-                f"• Oportunidades DISPONÍVEIS para compra/claim: {summary.get('available_domains', 0)}\n\n"
+                f"• Vídeos analisados no YouTube: {total_vids:,}\n"
+                f"• Domínios / Contas IG identificadas: {total_doms:,}\n"
+                f"• Oportunidades DISPONÍVEIS para compra/claim: {avail_doms:,}\n\n"
                 f"💾 Cópia de segurança auto-salva na pasta Downloads."
             )
 
@@ -1378,7 +1606,8 @@ class HunterTab(QWidget):
         
         # Group domains to get exact unique opportunities counts
         unique_doms_set = set()
-        unique_avail_set = set()
+        unique_avail_domains_set = set()
+        unique_avail_instagram_set = set()
         for d in self.all_domains:
             key = (d.get("root_domain") or d.get("display_name") or "").strip().lower()
             if key:
@@ -1386,12 +1615,16 @@ class HunterTab(QWidget):
                 st = d.get("status", "")
                 # Strictly Available/Expired (excludes Inativo, Ativo, and Verificar)
                 if st == "Disponível" and st != "Inativo" and st != "Ativo" and st != "Verificar":
-                    unique_avail_set.add(key)
+                    if d.get("is_instagram"):
+                        unique_avail_instagram_set.add(key)
+                    else:
+                        unique_avail_domains_set.add(key)
 
         self.val_videos.setText(str(total_vids))
         self.val_views.setText(format_number(total_views))
         self.val_domains.setText(str(len(unique_doms_set)))
-        self.val_avail.setText(str(len(unique_avail_set)))
+        self.val_avail.setText(str(len(unique_avail_domains_set)))
+        self.val_instagram.setText(str(len(unique_avail_instagram_set)))
 
     def _append_log(self, text: str):
         self.log_view.appendPlainText(text)
@@ -1414,44 +1647,61 @@ class HunterTab(QWidget):
             QDesktopServices.openUrl(QUrl(url))
 
     def _on_filter_videos_by_domain(self, domain_name: str):
-        """Switch to videos tab and filter all videos containing the specified domain."""
+        """Switch to videos tab and filter strictly for all videos containing the specified domain."""
         self.results_tabs.setCurrentIndex(0) # Tab 0: Videos
-        self.video_table.set_search_query(domain_name)
+        self.video_table.filter_by_exact_domain(domain_name)
         self.status_label.setText(f"Exibindo todos os vídeos com o link '{domain_name}'...")
         self._append_log(f"🔍 Filtrando vídeos com o link '{domain_name}' na tabela principal.")
 
-    def _on_domain_excluded(self, excluded_target: str):
-        """Immediately remove excluded domain from tables, memory and session storage."""
-        clean_target = excluded_target.strip().lower().replace("@", "")
+    def _on_domains_excluded(self, excluded_targets: Any):
+        """Immediately remove one or more excluded domains from tables, memory and session storage."""
+        from core.domain_extractor import parse_multiple_exclusion_targets
+        clean_targets = set(parse_multiple_exclusion_targets(excluded_targets))
+        if not clean_targets:
+            return
 
         # 1. Filter all_domains
         self.all_domains = [
             d for d in self.all_domains
-            if (d.get("display_name") or "").strip().lower().replace("📸 @", "").replace("@", "") != clean_target
-            and (d.get("root_domain") or "").strip().lower().replace("@", "") != clean_target
+            if (d.get("display_name") or "").strip().lower().replace("📸 @", "").replace("@", "") not in clean_targets
+            and (d.get("root_domain") or "").strip().lower().replace("@", "") not in clean_targets
         ]
         self.domain_table.set_domains(self.all_domains)
+
+        for target in clean_targets:
+            if target in self.seo_table.raw_seo_data:
+                del self.seo_table.raw_seo_data[target]
+        self.seo_table._apply_filter_and_render()
 
         # 2. Filter video internal domain references
         for v in self.all_videos:
             v_doms = v.get("domains", [])
             v["domains"] = [
                 d for d in v_doms
-                if (d.get("display_name") or "").strip().lower().replace("📸 @", "").replace("@", "") != clean_target
-                and (d.get("root_domain") or "").strip().lower().replace("@", "") != clean_target
+                if (d.get("display_name") or "").strip().lower().replace("📸 @", "").replace("@", "") not in clean_targets
+                and (d.get("root_domain") or "").strip().lower().replace("@", "") not in clean_targets
             ]
         self.video_table.set_videos(self.all_videos)
 
         self._update_stat_cards()
         self._trigger_autosave()
-        self._append_log(f"🚫 '{excluded_target}' adicionado à Lista de Exclusão e removido dos resultados.")
-        self.status_label.setText(f"Domínio '{excluded_target}' adicionado à lista de exclusão.")
+        if len(clean_targets) == 1:
+            item = next(iter(clean_targets))
+            self._append_log(f"🚫 '{item}' adicionado à Lista de Exclusão e removido dos resultados.")
+            self.status_label.setText(f"Domínio '{item}' adicionado à lista de exclusão.")
+        else:
+            self._append_log(f"🚫 {len(clean_targets)} domínios/perfis adicionados à Lista de Exclusão e removidos dos resultados.")
+            self.status_label.setText(f"{len(clean_targets)} itens adicionados à lista de exclusão.")
+
+    def _on_domain_excluded(self, excluded_target: str):
+        self._on_domains_excluded([excluded_target])
 
     def _clear_results(self):
         self.all_videos.clear()
         self.all_domains.clear()
         self.video_table.set_videos([])
         self.domain_table.set_domains([])
+        self.seo_table.clear_domains()
         if self.crawler_thread and self.crawler_thread.crawler:
             self.crawler_thread.crawler.clear_seen_videos()
         self.log_view.clear()
@@ -1459,6 +1709,11 @@ class HunterTab(QWidget):
         self.lbl_active_keyword.setText("Aguardando início da mineração...")
         self.lbl_active_progress_pill.setText("Termo -- / --")
         self.lbl_telemetry.setText("⏱️ Tempo: 00:00  •  ⚡ Média: -- s/vídeo  •  ⏳ Restante: --")
+        self.val_videos.setText("0")
+        self.val_views.setText("0")
+        self.val_domains.setText("0")
+        self.val_avail.setText("0")
+        self.val_instagram.setText("0")
         self._update_stat_cards()
         self.autosave_manager.clear_saved_session()
         self.status_label.setText("Resultados limpos e sessão anterior resetada.")

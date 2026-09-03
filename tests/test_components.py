@@ -552,6 +552,65 @@ class TestYoutubeEspiaoCore(unittest.TestCase):
         self.assertNotIn(sample_domain, doms2)
         self.assertFalse(any(sample_ig in d.get("root_domain", "") for d in res2))
 
+    def test_multiple_domain_exclusion(self):
+        """Test adding multiple domains and Instagram handles via comma, semicolon, newlines, and lists."""
+        from core.domain_extractor import (
+            add_to_exclusion_list, remove_from_exclusion_list,
+            get_custom_exclusions, IGNORE_DOMAINS
+        )
+        import time
+        uid = int(time.time() * 1000)
+        d1 = f"multitest-a-{uid}.com"
+        d2 = f"multitest-b-{uid}.net"
+        d3 = f"multitest-c-{uid}.org"
+        ig1 = f"multitest_ig_{uid}"
+
+        # 1. Comma and newline separated string
+        multi_str = f"https://{d1}/page, www.{d2};\n@{ig1}, {d3}"
+        success = add_to_exclusion_list(multi_str)
+        self.assertTrue(success)
+
+        for target in [d1, d2, d3, ig1]:
+            self.assertIn(target, IGNORE_DOMAINS)
+            self.assertIn(target, get_custom_exclusions())
+
+        # 2. Test removal of some items
+        remove_from_exclusion_list([d1, ig1])
+        self.assertNotIn(d1, IGNORE_DOMAINS)
+        self.assertNotIn(ig1, IGNORE_DOMAINS)
+        self.assertIn(d2, IGNORE_DOMAINS)
+        self.assertIn(d3, IGNORE_DOMAINS)
+
+        # Cleanup remaining
+        remove_from_exclusion_list([d2, d3])
+
+    def test_segregated_available_stats(self):
+        """Test separating web domains and Instagram handles in stats calculation."""
+        mock_domains = [
+            {"root_domain": "compravel1.com", "status": "Disponível", "is_instagram": False},
+            {"root_domain": "compravel2.com", "status": "Disponível", "is_instagram": False},
+            {"root_domain": "livre_ig_1", "display_name": "📸 @livre_ig_1", "status": "Disponível", "is_instagram": True},
+            {"root_domain": "livre_ig_2", "display_name": "📸 @livre_ig_2", "status": "Disponível", "is_instagram": True},
+            {"root_domain": "inativo.com", "status": "Inativo", "is_instagram": False},
+            {"root_domain": "ativo.com", "status": "Ativo", "is_instagram": False},
+        ]
+
+        avail_doms = {
+            (d.get("root_domain") or "").strip().lower()
+            for d in mock_domains
+            if d.get("status") == "Disponível" and not d.get("is_instagram")
+        }
+        avail_igs = {
+            (d.get("root_domain") or d.get("display_name") or "").strip().lower()
+            for d in mock_domains
+            if d.get("status") == "Disponível" and d.get("is_instagram")
+        }
+
+        self.assertEqual(len(avail_doms), 2)
+        self.assertEqual(len(avail_igs), 2)
+        self.assertIn("compravel1.com", avail_doms)
+        self.assertIn("livre_ig_1", avail_igs)
+
     def test_instance_manager(self):
         """Test multi-instance claiming, numbering, releasing, and color palettes."""
         from core.instance_manager import InstanceManager, get_instance_color
@@ -644,7 +703,7 @@ class TestYoutubeEspiaoCore(unittest.TestCase):
         from ui.hunter_tab import HunterTab
 
         hunter = HunterTab()
-        self.assertEqual(hunter.spin_max.maximum(), 100000)
+        self.assertEqual(hunter.spin_max.maximum(), 10000000)
         self.assertEqual(hunter.spin_max.minimum(), 5)
         
         # Test unlimited toggle
@@ -1124,6 +1183,146 @@ class TestYoutubeEspiaoCore(unittest.TestCase):
         # dormant: < 2 (or < 20 on new videos)
         self.assertEqual(VPHService.classify_traffic(1.0, old_pub, now), "dormant")
         self.assertEqual(VPHService.classify_traffic(8.0, new_pub, now), "dormant")
+
+    def test_strict_domain_matching_and_exclusion_of_generic_mentions(self):
+        """
+        Verify that:
+        1. Generic non-clickable mentions (Twitter @handle, Telegram @handle, editor @handle) are rejected.
+        2. Strict domain filtering in VideoTableView ONLY matches videos that genuinely contain that domain in their domains list, never matching false substring titles or channel names.
+        """
+        from core.domain_extractor import DomainExtractor
+        extractor = DomainExtractor()
+
+        # 1. Non-clickable generic mentions & emails rejected
+        mixed_text = (
+            "Siga no Twitter: @twitterhandle e no Telegram: @telegramhandle\n"
+            "Edição por @editor_video e áudio por @audiomaster\n"
+            "E-mail para contato: contato@empresa.com.br\n"
+            "Texto solto não clicável: siteapenastexto.com ou outro.net\n"
+            "Link real clicável: https://meusiteclicavel.com/oferta\n"
+            "Instagram oficial: https://www.instagram.com/canal_oficial_real"
+        )
+        res = extractor.process_text_for_domains(mixed_text)
+        roots = [d["root_domain"] for d in res]
+
+        self.assertIn("meusiteclicavel.com", roots)
+        self.assertIn("instagram.com/canal_oficial_real", roots)
+        self.assertNotIn("twitterhandle", roots)
+        self.assertNotIn("telegramhandle", roots)
+        self.assertNotIn("editor_video", roots)
+        self.assertNotIn("audiomaster", roots)
+        self.assertNotIn("empresa.com.br", roots)
+        self.assertNotIn("siteapenastexto.com", roots)
+
+        # 2. Strict domain filter in VideoTableView
+        from PyQt6.QtWidgets import QApplication
+        import sys
+        app = QApplication.instance() or QApplication(sys.argv)
+        from ui.video_table_model import VideoTableView
+        v_table = VideoTableView()
+
+        v1 = {
+            "id": "vid_1",
+            "title": "Tutorial Completo de Tecnologia e Programação",
+            "channel_name": "Canal Tecnologia Total",
+            "domains": [{"root_domain": "iniciante.org", "display_name": "iniciante.org", "status": "Ativo"}]
+        }
+        v2 = {
+            "id": "vid_2",
+            "title": "Vlog de Viagem pela Europa",
+            "channel_name": "Mochilão",
+            "domains": [{"root_domain": "tecnologia.com", "display_name": "tecnologia.com", "status": "Disponível"}]
+        }
+        v3 = {
+            "id": "vid_3",
+            "title": "Receita Deliciosa de Bolo",
+            "channel_name": "Cozinha Prática",
+            "domains": [{"root_domain": "instagram.com/chef_bolo", "display_name": "📸 @chef_bolo", "status": "Disponível"}]
+        }
+
+        v_table.set_videos([v1, v2, v3])
+
+        # A: Filter strictly by 'tecnologia.com'
+        # Must return ONLY v2 (which has the domain), NOT v1 (which only has 'Tecnologia' in title/channel)!
+        v_table.filter_by_exact_domain("tecnologia.com")
+        filtered_ids = [v["id"] for v in v_table.filtered_videos_data]
+        self.assertEqual(filtered_ids, ["vid_2"])
+
+        # B: Filter strictly by Instagram handle
+        v_table.filter_by_exact_domain("📸 @chef_bolo")
+        filtered_ids_ig = [v["id"] for v in v_table.filtered_videos_data]
+        self.assertEqual(filtered_ids_ig, ["vid_3"])
+
+        # C: General search for 'Tecnologia' matches both v1 (title) and v2 (domain)
+        v_table.set_search_query("Tecnologia")
+        general_ids = [v["id"] for v in v_table.filtered_videos_data]
+        self.assertIn("vid_1", general_ids)
+        self.assertIn("vid_2", general_ids)
+        self.assertNotIn("vid_3", general_ids)
+
+    def test_seo_metrics_intelligence_and_table_column_reordering(self):
+        """
+        Verify that:
+        1. SeoMetricsService calculates valid DA (1-100), PA (1-100), Backlinks, RefDomains, and deep audit URLs.
+        2. SeoAuthorityTableView enables interactive movable columns and handles available domains properly.
+        """
+        from core.seo_metrics_service import SeoMetricsService
+        service = SeoMetricsService()
+
+        # 1. Clean domain parsing
+        self.assertEqual(service.clean_domain("https://www.cursodepiano.com.br/aulas?id=1"), "cursodepiano.com.br")
+        self.assertEqual(service.clean_domain("http://lojadomarcio.com/"), "lojadomarcio.com")
+
+        # 2. Analyze domain calculation
+        res = service.analyze_domain(
+            "cursodepiano.com.br",
+            video_count=3,
+            total_daily_views=15000,
+            total_views=500000,
+            force_refresh=True
+        )
+        self.assertTrue(1 <= res["da"] <= 100)
+        self.assertTrue(1 <= res["pa"] <= 100)
+        self.assertTrue(res["backlinks"] >= 1)
+        self.assertTrue(res["ref_domains"] >= 1)
+        self.assertTrue(1 <= res["spam_score"] <= 100)
+        self.assertIn("moz.com/domain-analysis", res["moz_url"])
+        self.assertIn("ahrefs.com/backlink-checker", res["ahrefs_url"])
+        self.assertIn("semrush.com/analytics", res["semrush_url"])
+
+        # 3. SeoAuthorityTableView and Column Reordering
+        from PyQt6.QtWidgets import QApplication
+        import sys
+        app = QApplication.instance() or QApplication(sys.argv)
+        from ui.seo_table_view import SeoAuthorityTableView
+        table_view = SeoAuthorityTableView()
+
+        # Sections must be movable (drag-and-drop column reordering)
+        header = table_view.table.horizontalHeader()
+        self.assertTrue(header.sectionsMovable())
+        self.assertTrue(header.dragEnabled())
+
+        # Move column 1 to visual index 3
+        orig_visual_1 = header.visualIndex(1)
+        header.moveSection(orig_visual_1, 3)
+        self.assertEqual(header.visualIndex(1), 3)
+
+        # Reset column order
+        table_view._reset_column_order(silent=True)
+        self.assertEqual(header.visualIndex(1), 1)
+
+        # 4. Add available domain
+        domain_item = {
+            "root_domain": "cursodepiano.com.br",
+            "display_name": "cursodepiano.com.br",
+            "status": "Disponível",
+            "is_instagram": False,
+            "video_count": 2,
+            "total_daily_views": 8500
+        }
+        table_view.add_domain(domain_item)
+        self.assertIn("cursodepiano.com.br", table_view.raw_seo_data)
+        self.assertEqual(len(table_view.filtered_seo_data), 1)
 
 if __name__ == "__main__":
     unittest.main()

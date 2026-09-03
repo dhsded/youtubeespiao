@@ -115,6 +115,16 @@ QFrame#stat_card_available:hover {
     border-color: #22C55E;
 }
 
+QFrame#stat_card_instagram {
+    background-color: #210F23;
+    border: 1px solid #D946EF;
+    border-radius: 8px;
+}
+
+QFrame#stat_card_instagram:hover {
+    border-color: #F43F5E;
+}
+
 QLabel#stat_title {
     color: #AAAAAA;
     font-size: 11px;
@@ -143,6 +153,12 @@ QLabel#stat_val_domains {
 
 QLabel#stat_val_available {
     color: #4ADE80;
+    font-size: 26px;
+    font-weight: 800;
+}
+
+QLabel#stat_val_instagram {
+    color: #F472B6;
     font-size: 26px;
     font-weight: 800;
 }
@@ -688,6 +704,16 @@ QFrame#stat_card_available:hover {
     border-color: #16A34A;
 }
 
+QFrame#stat_card_instagram {
+    background-color: #FDF4FF;
+    border: 1px solid #D946EF;
+    border-radius: 8px;
+}
+
+QFrame#stat_card_instagram:hover {
+    border-color: #E1306C;
+}
+
 QLabel#stat_title {
     color: #606060;
     font-size: 11px;
@@ -716,6 +742,12 @@ QLabel#stat_val_domains {
 
 QLabel#stat_val_available {
     color: #16A34A;
+    font-size: 26px;
+    font-weight: 800;
+}
+
+QLabel#stat_val_instagram {
+    color: #C026D3;
     font-size: 26px;
     font-weight: 800;
 }
