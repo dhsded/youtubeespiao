@@ -874,79 +874,66 @@ class YouTubeCrawler:
         # 2. Build Semantic Topic Profile for strict relevance gating
         topic_profile = build_topic_profile(keyword, related_terms=related_suggestions)
 
-        # 3. Initial Primary Search
-        initial_videos = []
-        if active_year_range:
-            start_yr, end_yr = active_year_range
-            num_years = max(1, (end_yr - start_yr + 1))
-            per_year_limit = max(10, int(max_videos / num_years) + 5)
-            for yr in range(end_yr, start_yr - 1, -1):
-                if self._is_stopped:
-                    break
-                yr_videos = self.search_videos(
-                    f"{keyword} {yr}",
-                    max_results=per_year_limit,
-                    sort_by=sort_by,
-                    hl=hl,
-                    gl=gl
-                )
-                initial_videos.extend(yr_videos)
-        else:
-            search_limit = max_videos
-            initial_videos = self.search_videos(
-                keyword,
-                max_results=search_limit,
-                sort_by=sort_by,
-                upload_date=date_filter if date_filter in ("today", "this_week", "this_month", "this_year") else None,
-                hl=hl,
-                gl=gl
-            )
-
-        scanned_videos = []
-        all_domains = []
-        processed_index = 0
+        # 3. Fast Streaming Video Generator (Starts processing Video #1 immediately in <1s)
         related_suggestions_queue = list(related_suggestions)
 
-        while (initial_videos or related_suggestions_queue) and len(scanned_videos) < max_videos:
-            if self._is_stopped:
-                break
-
-            # If current batch is empty or low, fetch from next learned related suggestion
-            if not initial_videos and related_suggestions_queue and len(scanned_videos) < max_videos:
-                next_rel_term = related_suggestions_queue.pop(0)
-                if on_progress:
-                    on_progress(len(scanned_videos), max_videos, f"{target_info}Buscando termo relacionado: '{next_rel_term}'...")
-                
-                if active_year_range:
-                    start_yr, end_yr = active_year_range
-                    rel_vids = []
-                    for yr in range(end_yr, start_yr - 1, -1):
+        def video_stream_generator():
+            if active_year_range:
+                start_yr, end_yr = active_year_range
+                num_years = max(1, (end_yr - start_yr + 1))
+                per_year_limit = max(10, int(max_videos / num_years) + 5)
+                for yr in range(end_yr, start_yr - 1, -1):
+                    if self._is_stopped:
+                        break
+                    for item in self.stream_search_videos(
+                        keyword=f"{keyword} {yr}",
+                        max_results=per_year_limit,
+                        sort_by=sort_by,
+                        hl=hl,
+                        gl=gl
+                    ):
                         if self._is_stopped:
                             break
-                        rel_vids.extend(self.search_videos(
-                            keyword=f"{next_rel_term} {yr}",
-                            max_results=min(max_videos - len(scanned_videos), 300),
-                            sort_by=sort_by,
-                            hl=hl,
-                            gl=gl
-                        ))
-                else:
-                    rel_vids = self.search_videos(
+                        yield item
+            else:
+                for item in self.stream_search_videos(
+                    keyword=keyword,
+                    max_results=max_videos,
+                    sort_by=sort_by,
+                    upload_date=date_filter if date_filter in ("today", "this_week", "this_month", "this_year") else None,
+                    hl=hl,
+                    gl=gl
+                ):
+                    if self._is_stopped:
+                        break
+                    yield item
+
+            # If still below max_videos, stream from learned related suggestions
+            if include_related and related_suggestions_queue:
+                for next_rel_term in related_suggestions_queue:
+                    if self._is_stopped or len(scanned_videos) >= max_videos:
+                        break
+                    if on_progress:
+                        on_progress(len(scanned_videos), max_videos, f"{target_info}Buscando termo relacionado: '{next_rel_term}'...")
+                    for item in self.stream_search_videos(
                         keyword=next_rel_term,
                         max_results=min(max_videos - len(scanned_videos), 300),
                         sort_by=sort_by,
                         upload_date=date_filter if date_filter in ("today", "this_week", "this_month", "this_year") else None,
                         hl=hl,
                         gl=gl
-                    )
-                initial_videos.extend(rel_vids)
-                if not initial_videos and not related_suggestions_queue:
-                    break
+                    ):
+                        if self._is_stopped:
+                            break
+                        yield item
 
-            if not initial_videos:
+        scanned_videos = []
+        all_domains = []
+
+        for v_item in video_stream_generator():
+            if self._is_stopped or len(scanned_videos) >= max_videos:
                 break
 
-            v_item = initial_videos.pop(0)
             vid_id = v_item.get("id")
             if not vid_id or vid_id in self.seen_video_ids:
                 continue
