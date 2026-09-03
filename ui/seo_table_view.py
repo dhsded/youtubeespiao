@@ -100,6 +100,20 @@ class SeoAuthorityTableView(QWidget):
         "Ações SEO"
     ]
 
+    DEFAULT_COLUMN_WIDTHS = [
+        95,   # Status
+        210,  # Domínio / Link
+        115,  # DA (Autoridade)
+        95,   # PA (Página)
+        100,  # Backlinks
+        100,  # Ref. Domains
+        90,   # Qtd Vídeos
+        105,  # Tráfego / Dia
+        95,   # Spam Score
+        110,  # Última Análise
+        240   # Ações SEO
+    ]
+
     LAYOUT_CONFIG_FILE = os.path.join(os.path.expanduser("~"), ".yt_espiao_seo_layout.json")
 
     def __init__(self, parent=None):
@@ -169,7 +183,7 @@ class SeoAuthorityTableView(QWidget):
         # Search Bar
         self.input_search = QLineEdit()
         self.input_search.setPlaceholderText("🔍 Filtrar domínio ou termo...")
-        self.input_search.setFixedWidth(230)
+        self.input_search.setFixedWidth(210)
         self.input_search.textChanged.connect(self._on_search_changed)
         toolbar.addWidget(self.input_search)
 
@@ -190,16 +204,19 @@ class SeoAuthorityTableView(QWidget):
         self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.table.customContextMenuRequested.connect(self._on_table_context_menu)
 
-        # Enable Interactive Drag-and-Drop Column Reordering
+        # Enable Interactive Drag-and-Drop Column Reordering & Free Resizing (Total User Freedom)
         header = self.table.horizontalHeader()
-        header.setSectionsMovable(True) # USER REQUIREMENT: Permite arrastar e alterar a posição de qualquer coluna!
+        header.setSectionsMovable(True)
         header.setDragEnabled(True)
-        header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
-        header.sectionMoved.connect(self._save_column_order)
-        header.sectionClicked.connect(self._on_header_section_clicked)
-
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch) # Domain stretches
+        header.setHighlightSections(True)
         header.setSectionsClickable(True)
+
+        for i in range(len(self.COLUMN_HEADERS)):
+            header.setSectionResizeMode(i, QHeaderView.ResizeMode.Interactive)
+
+        header.sectionMoved.connect(self._save_column_order)
+        header.sectionResized.connect(self._on_section_resized)
+        header.sectionClicked.connect(self._on_header_section_clicked)
 
         self.table.verticalHeader().setDefaultSectionSize(46)
         self.table.verticalHeader().setVisible(False)
@@ -464,51 +481,61 @@ class SeoAuthorityTableView(QWidget):
         self.btn_prev_page.setEnabled(self.current_page > 1)
         self.btn_next_page.setEnabled(self.current_page < total_pages)
 
-    # ----------------------------------------------------
-    # Column Reordering & Layout Persistence (USER REQUIREMENT)
-    # ----------------------------------------------------
+    def _on_section_resized(self, logicalIndex: int, oldSize: int, newSize: int):
+        self._save_column_order()
+
     def _save_column_order(self):
-        """Save customized drag-and-drop column order to persistent disk file."""
+        """Save customized drag-and-drop column order and widths to persistent disk file."""
         try:
             header = self.table.horizontalHeader()
             visual_indices = [header.visualIndex(i) for i in range(len(self.COLUMN_HEADERS))]
+            widths = [self.table.columnWidth(i) for i in range(len(self.COLUMN_HEADERS))]
             with open(self.LAYOUT_CONFIG_FILE, "w", encoding="utf-8") as f:
-                json.dump({"column_order": visual_indices}, f)
+                json.dump({"column_order": visual_indices, "column_widths": widths}, f)
         except Exception:
             pass
 
     def _load_column_order(self):
-        """Restore user's preferred column arrangement."""
+        """Restore user's preferred column arrangement and custom widths."""
+        # Apply balanced default widths first
+        for i, w in enumerate(self.DEFAULT_COLUMN_WIDTHS):
+            self.table.setColumnWidth(i, w)
+
         if not os.path.exists(self.LAYOUT_CONFIG_FILE):
             return
         try:
             with open(self.LAYOUT_CONFIG_FILE, "r", encoding="utf-8") as f:
                 cfg = json.load(f)
             order = cfg.get("column_order", [])
+            widths = cfg.get("column_widths", [])
             header = self.table.horizontalHeader()
             if len(order) == len(self.COLUMN_HEADERS):
-                # Apply saved visual positions
                 for logical_col, target_visual in enumerate(order):
                     current_visual = header.visualIndex(logical_col)
                     if current_visual != target_visual:
                         header.moveSection(current_visual, target_visual)
+            if len(widths) == len(self.COLUMN_HEADERS):
+                for i, w in enumerate(widths):
+                    if isinstance(w, int) and 30 <= w <= 800:
+                        self.table.setColumnWidth(i, w)
         except Exception:
             pass
 
     def _reset_column_order(self, silent: bool = False):
-        """Reset column arrangement to standard default layout."""
+        """Reset column arrangement and widths to standard default layout."""
         header = self.table.horizontalHeader()
         for i in range(len(self.COLUMN_HEADERS)):
             current_visual = header.visualIndex(i)
             if current_visual != i:
                 header.moveSection(current_visual, i)
+            self.table.setColumnWidth(i, self.DEFAULT_COLUMN_WIDTHS[i])
         if os.path.exists(self.LAYOUT_CONFIG_FILE):
             try:
                 os.remove(self.LAYOUT_CONFIG_FILE)
             except Exception:
                 pass
         if not silent:
-            QMessageBox.information(self, "Ordem Restaurada", "A disposição das colunas foi restaurada para a ordem padrão!")
+            QMessageBox.information(self, "Layout Restaurado", "A disposição e largura das colunas foram restauradas para o padrão!")
 
     # ----------------------------------------------------
     # Cell Clicks & Actions

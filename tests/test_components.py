@@ -1291,25 +1291,28 @@ class TestYoutubeEspiaoCore(unittest.TestCase):
         self.assertIn("semrush.com/analytics", res["semrush_url"])
 
         # 3. SeoAuthorityTableView and Column Reordering
-        from PyQt6.QtWidgets import QApplication
+        from PyQt6.QtWidgets import QApplication, QHeaderView
         import sys
         app = QApplication.instance() or QApplication(sys.argv)
         from ui.seo_table_view import SeoAuthorityTableView
         table_view = SeoAuthorityTableView()
 
-        # Sections must be movable (drag-and-drop column reordering)
+        # Sections must be movable (drag-and-drop column reordering) and interactively resizable
         header = table_view.table.horizontalHeader()
         self.assertTrue(header.sectionsMovable())
         self.assertTrue(header.dragEnabled())
+        self.assertEqual(header.sectionResizeMode(1), QHeaderView.ResizeMode.Interactive)
+        self.assertEqual(table_view.table.columnWidth(1), 210)
 
         # Move column 1 to visual index 3
         orig_visual_1 = header.visualIndex(1)
         header.moveSection(orig_visual_1, 3)
         self.assertEqual(header.visualIndex(1), 3)
 
-        # Reset column order
+        # Reset column order & widths
         table_view._reset_column_order(silent=True)
         self.assertEqual(header.visualIndex(1), 1)
+        self.assertEqual(table_view.table.columnWidth(1), 210)
 
         # 4. Add available domain
         domain_item = {
