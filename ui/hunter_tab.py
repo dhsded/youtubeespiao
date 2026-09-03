@@ -770,8 +770,8 @@ class HunterTab(QWidget):
         self.combo_mode.addItem("🎯 Palavras-chave", "keywords")
         self.combo_mode.addItem("📺 Canais do YouTube", "channels")
         self.combo_mode.addItem("🌳 Nichos & Subnichos", "niches")
-        self.combo_mode.setMinimumWidth(160)
-        self.combo_mode.setMaximumWidth(185)
+        self.combo_mode.setMinimumWidth(170)
+        self.combo_mode.setMaximumWidth(190)
         self.combo_mode.currentIndexChanged.connect(self._on_search_mode_changed)
         row1.addWidget(self.combo_mode)
 
@@ -780,11 +780,19 @@ class HunterTab(QWidget):
         self.input_target.setPlaceholderText("Digite termos de busca ou canais (ex: GTA, dropshipping, receitas fitness)...")
         self.input_target.setMinimumWidth(260)
         self.input_target.returnPressed.connect(self._on_start_or_resume)
-        row1.addWidget(self.input_target, 1)
+        row1.addWidget(self.input_target, 2)
+
+        # Multi-Instance Batch Launcher from .TXT
+        self.btn_batch_txt = QPushButton("📂 Lista .TXT")
+        self.btn_batch_txt.setObjectName("btn_batch_action")
+        self.btn_batch_txt.setToolTip("Carregar arquivo .txt com termos por linha para abrir múltiplas instâncias e minerar automaticamente.")
+        self.btn_batch_txt.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.btn_batch_txt.clicked.connect(self._load_batch_txt_file)
+        row1.addWidget(self.btn_batch_txt)
 
         # Niche & Sub-Niche Selectors (for niches mode)
         self.combo_niche = QComboBox()
-        self.combo_niche.setMinimumWidth(200)
+        self.combo_niche.setMinimumWidth(210)
         self.combo_niche.addItem("🌐 Todos os Nichos", "all")
         for n_name in get_available_niches():
             self.combo_niche.addItem(n_name, n_name)
@@ -793,7 +801,7 @@ class HunterTab(QWidget):
         row1.addWidget(self.combo_niche, 1)
 
         self.combo_subniche = QComboBox()
-        self.combo_subniche.setMinimumWidth(200)
+        self.combo_subniche.setMinimumWidth(210)
         self.combo_subniche.setVisible(False)
         row1.addWidget(self.combo_subniche, 1)
         self._populate_subniches()
@@ -804,12 +812,12 @@ class HunterTab(QWidget):
         row1.addWidget(lbl_presets)
 
         self.combo_presets = QComboBox()
-        self.combo_presets.setMinimumWidth(190)
-        self.combo_presets.setMaximumWidth(250)
+        self.combo_presets.setMinimumWidth(160)
+        self.combo_presets.setMaximumWidth(210)
         self.combo_presets.currentIndexChanged.connect(self._on_preset_selected)
         row1.addWidget(self.combo_presets)
 
-        self.btn_save_preset = QPushButton("💾 Salvar Modo")
+        self.btn_save_preset = QPushButton("💾 Salvar")
         self.btn_save_preset.setToolTip("Salvar a configuração atual com um nome personalizado para encontrar na lista.")
         self.btn_save_preset.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.btn_save_preset.clicked.connect(self._save_custom_preset_dialog)
@@ -822,14 +830,6 @@ class HunterTab(QWidget):
         self.btn_delete_preset.clicked.connect(self._delete_selected_preset)
         row1.addWidget(self.btn_delete_preset)
 
-        # Multi-Instance Batch Launcher from .TXT
-        self.btn_batch_txt = QPushButton("📂 Abrir Lista .TXT")
-        self.btn_batch_txt.setObjectName("btn_batch_action")
-        self.btn_batch_txt.setToolTip("Carregar arquivo .txt com termos por linha para abrir múltiplas instâncias e minerar automaticamente.")
-        self.btn_batch_txt.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        self.btn_batch_txt.clicked.connect(self._load_batch_txt_file)
-        row1.addWidget(self.btn_batch_txt)
-
         panel_layout.addLayout(row1)
 
         # ----------------------------------------------------
@@ -838,29 +838,23 @@ class HunterTab(QWidget):
         row2 = QHBoxLayout()
         row2.setSpacing(8)
 
-        lbl_lang = QLabel("🌍 Idioma / País:")
+        lbl_lang = QLabel("🌍 Idioma:")
         lbl_lang.setStyleSheet("font-weight: 600; color: #94A3B8;")
         row2.addWidget(lbl_lang)
 
         self.combo_lang = QComboBox()
         for l in get_language_list():
             self.combo_lang.addItem(l["label"], l["code"])
-        self.combo_lang.setMinimumWidth(160)
-        self.combo_lang.setMaximumWidth(200)
+        self.combo_lang.setMinimumWidth(150)
+        self.combo_lang.setMaximumWidth(185)
         self.combo_lang.currentIndexChanged.connect(self._on_lang_changed)
         row2.addWidget(self.combo_lang)
 
-        self.btn_exclude_countries = QPushButton("🚫 Excluir Países...")
+        self.btn_exclude_countries = QPushButton("🚫 Países...")
         self.btn_exclude_countries.setToolTip("Configurar países ou idiomas a serem excluídos das buscas globais.")
         self.btn_exclude_countries.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.btn_exclude_countries.clicked.connect(self._open_country_exclusion_dialog)
         row2.addWidget(self.btn_exclude_countries)
-
-        self.btn_exclude_domains = QPushButton("🚫 Excluir Domínios...")
-        self.btn_exclude_domains.setToolTip("Adicionar múltiplos domínios ou perfis à lista de exclusão permanente.")
-        self.btn_exclude_domains.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        self.btn_exclude_domains.clicked.connect(self._open_domain_exclusion_dialog)
-        row2.addWidget(self.btn_exclude_domains)
 
         row2.addSpacing(6)
 
@@ -886,32 +880,34 @@ class HunterTab(QWidget):
         self.combo_date.currentIndexChanged.connect(self._on_date_filter_changed)
         row2.addWidget(self.combo_date)
 
-        # Custom Year Range Controls
+        # Custom Year Range Controls (agora com tamanho confortável e legível)
         self.widget_custom_years = QWidget()
         custom_yr_layout = QHBoxLayout(self.widget_custom_years)
-        custom_yr_layout.setContentsMargins(2, 0, 2, 0)
-        custom_yr_layout.setSpacing(4)
+        custom_yr_layout.setContentsMargins(0, 0, 0, 0)
+        custom_yr_layout.setSpacing(5)
         
         lbl_de = QLabel("De:")
-        lbl_de.setStyleSheet("font-weight: bold;")
+        lbl_de.setStyleSheet("font-weight: 700; color: #38BDF8;")
         custom_yr_layout.addWidget(lbl_de)
         
         self.spin_year_start = QSpinBox()
         self.spin_year_start.setRange(2006, 2026)
         self.spin_year_start.setValue(2020)
         self.spin_year_start.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.spin_year_start.setFixedWidth(80)
+        self.spin_year_start.setFixedWidth(85)
+        self.spin_year_start.setToolTip("Ano inicial (ex: 2020)")
         custom_yr_layout.addWidget(self.spin_year_start)
         
         lbl_ate = QLabel("Até:")
-        lbl_ate.setStyleSheet("font-weight: bold;")
+        lbl_ate.setStyleSheet("font-weight: 700; color: #38BDF8;")
         custom_yr_layout.addWidget(lbl_ate)
         
         self.spin_year_end = QSpinBox()
         self.spin_year_end.setRange(2006, 2026)
         self.spin_year_end.setValue(2026)
         self.spin_year_end.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.spin_year_end.setFixedWidth(80)
+        self.spin_year_end.setFixedWidth(85)
+        self.spin_year_end.setToolTip("Ano final (ex: 2026)")
         custom_yr_layout.addWidget(self.spin_year_end)
         
         self.widget_custom_years.setVisible(False)
@@ -927,11 +923,18 @@ class HunterTab(QWidget):
         self.combo_sort.addItem("🔥 Mais Vistos", "view_count")
         self.combo_sort.addItem("🎯 Relevância", "relevance")
         self.combo_sort.addItem("📅 Mais Recentes", "upload_date")
-        self.combo_sort.setMinimumWidth(130)
-        self.combo_sort.setMaximumWidth(155)
+        self.combo_sort.setMinimumWidth(135)
+        self.combo_sort.setMaximumWidth(160)
         row2.addWidget(self.combo_sort)
 
         row2.addStretch()
+
+        self.btn_exclude_domains = QPushButton("🛡️ Excluir Domínios...")
+        self.btn_exclude_domains.setToolTip("Adicionar múltiplos domínios ou perfis à lista de exclusão permanente.")
+        self.btn_exclude_domains.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.btn_exclude_domains.clicked.connect(self._open_domain_exclusion_dialog)
+        row2.addWidget(self.btn_exclude_domains)
+
         panel_layout.addLayout(row2)
 
         # ----------------------------------------------------
@@ -949,10 +952,10 @@ class HunterTab(QWidget):
         self.spin_max.setValue(50)
         self.spin_max.setSingleStep(500)
         self.spin_max.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.spin_max.setFixedWidth(115)
+        self.spin_max.setFixedWidth(100)
         row3.addWidget(self.spin_max)
 
-        self.chk_unlimited = QCheckBox("♾️ Todos os Vídeos (até 10 Milhões)")
+        self.chk_unlimited = QCheckBox("♾️ Todos os Vídeos (até 10M)")
         self.chk_unlimited.setToolTip("Busca todos os vídeos disponíveis do canal ou termo (até 10.000.000).")
         self.chk_unlimited.toggled.connect(lambda checked: self.spin_max.setEnabled(not checked))
         row3.addWidget(self.chk_unlimited)
@@ -964,10 +967,10 @@ class HunterTab(QWidget):
         row3.addWidget(lbl_min_views)
 
         self.input_min_views = QLineEdit()
-        self.input_min_views.setPlaceholderText("0 (Sem Mínimo)")
+        self.input_min_views.setPlaceholderText("0")
         self.input_min_views.setValidator(QIntValidator(0, 100000000))
         self.input_min_views.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.input_min_views.setFixedWidth(110)
+        self.input_min_views.setFixedWidth(90)
         self.input_min_views.setToolTip("Mínimo de visualizações do vídeo (ex: 50000).")
         row3.addWidget(self.input_min_views)
 
@@ -1329,9 +1332,10 @@ class HunterTab(QWidget):
             self.combo_sort.addItem("📅 Mais Recentes", "upload_date")
 
     def _on_date_filter_changed(self):
-        if self.combo_mode.currentData() == "keywords":
-            code = self.combo_date.currentData()
-            self.widget_custom_years.setVisible(code == "custom_range")
+        code = self.combo_date.currentData()
+        mode = self.combo_mode.currentData()
+        is_custom = (code == "custom_range" and mode != "channels")
+        self.widget_custom_years.setVisible(is_custom)
 
     def _update_telemetry(self):
         if self.start_time <= 0 or not self.crawler_thread or not self.crawler_thread.isRunning() or self.is_paused:

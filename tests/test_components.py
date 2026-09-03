@@ -1393,6 +1393,23 @@ class TestYoutubeEspiaoCore(unittest.TestCase):
         hunter.combo_niche.setCurrentIndex(1)
         self.assertGreater(hunter.combo_subniche.count(), 1)
 
+        # Test custom year range visibility in niches mode
+        custom_range_idx = hunter.combo_date.findData("custom_range")
+        hunter.combo_date.setCurrentIndex(custom_range_idx)
+        self.assertFalse(hunter.widget_custom_years.isHidden())
+        self.assertGreaterEqual(hunter.spin_year_start.value(), 2006)
+        self.assertLessEqual(hunter.spin_year_end.value(), 2026)
+
+        # Test custom year range in keywords mode
+        kw_idx = hunter.combo_mode.findData("keywords")
+        hunter.combo_mode.setCurrentIndex(kw_idx)
+        self.assertFalse(hunter.widget_custom_years.isHidden())
+
+        # Test hidden in channels mode
+        ch_idx = hunter.combo_mode.findData("channels")
+        hunter.combo_mode.setCurrentIndex(ch_idx)
+        self.assertTrue(hunter.widget_custom_years.isHidden())
+
         # 4. Test O(1) video duplicate check & batching
         sample_v = {
             "id": "vid_test_123",
