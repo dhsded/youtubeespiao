@@ -95,43 +95,117 @@ def _get_exclusion_file_path() -> str:
     os.makedirs(save_dir, exist_ok=True)
     return os.path.join(save_dir, "custom_exclusions.txt")
 
+def _clean_exclusion_target(target: str) -> str:
+    """Clean domain or Instagram handle string for exclusion."""
+    if not target:
+        return ""
+    clean = target.strip().lower()
+    clean = re.sub(r'^https?:\/\/', '', clean)
+    clean = re.sub(r'^www\.', '', clean)
+    clean = clean.replace("@", "").strip("/ \t\r\n.,;:'\"")
+    # If it was an Instagram URL like instagram.com/handle/
+    if clean.startswith("instagram.com/") or clean.startswith("instagr.am/"):
+        parts = clean.split("/")
+        clean = parts[1] if len(parts) > 1 else clean
+    elif "/" in clean:
+        # Strip URL path from web domain (e.g. site.com/pagina -> site.com)
+        clean = clean.split("/", 1)[0].strip()
+    clean = clean.strip("/ \t\r\n.,;:'\"")
+    return clean
+
+def parse_multiple_exclusion_targets(text_or_items: Any) -> List[str]:
+    """Parse string (with commas, semicolons, newlines) or iterable into clean domain/handle targets."""
+    results: List[str] = []
+    if isinstance(text_or_items, str):
+        parts = re.split(r'[\r\n,;]+', text_or_items)
+        for p in parts:
+            p_clean = _clean_exclusion_target(p)
+            if p_clean and p_clean not in results:
+                results.append(p_clean)
+    elif hasattr(text_or_items, '__iter__'):
+        for item in text_or_items:
+            if isinstance(item, str):
+                p_clean = _clean_exclusion_target(item)
+                if p_clean and p_clean not in results:
+                    results.append(p_clean)
+    return results
+
 def load_custom_exclusions():
-    """Load persistent custom user exclusions into IGNORE_DOMAINS."""
+    """Load persistent custom user exclusions into IGNORE_DOMAINS and ALL_EXCLUDED_DOMAINS."""
     path = _get_exclusion_file_path()
     if os.path.exists(path):
         try:
             with open(path, "r", encoding="utf-8") as f:
                 for line in f:
-                    dom = line.strip().lower().replace("@", "")
+                    dom = _clean_exclusion_target(line)
                     if dom:
                         IGNORE_DOMAINS.add(dom)
                         ALL_EXCLUDED_DOMAINS.add(dom)
         except Exception as e:
             logger.debug(f"Failed to read custom exclusions: {e}")
 
-def add_to_exclusion_list(domain: str) -> bool:
-    """Add a domain or Instagram handle to persistent exclusion list."""
-    clean = domain.strip().lower().replace("@", "").replace("https://", "").replace("http://", "").replace("www.", "").strip("/")
-    if not clean:
+def add_to_exclusion_list(domain_or_domains: Any) -> bool:
+    """Add one or more domains/Instagram handles to persistent exclusion list."""
+    targets = parse_multiple_exclusion_targets(domain_or_domains)
+    if not targets:
         return False
     
-    IGNORE_DOMAINS.add(clean)
-    ALL_EXCLUDED_DOMAINS.add(clean)
+    for t in targets:
+        IGNORE_DOMAINS.add(t)
+        ALL_EXCLUDED_DOMAINS.add(t)
     
     path = _get_exclusion_file_path()
     try:
         current_custom = set()
         if os.path.exists(path):
             with open(path, "r", encoding="utf-8") as f:
-                current_custom = {l.strip().lower().replace("@", "") for l in f if l.strip()}
-        current_custom.add(clean)
+                current_custom = {_clean_exclusion_target(l) for l in f if l.strip()}
+        current_custom.update(targets)
         with open(path, "w", encoding="utf-8") as f:
             for item in sorted(current_custom):
-                f.write(f"{item}\n")
+                if item:
+                    f.write(f"{item}\n")
         return True
     except Exception as e:
         logger.error(f"Failed to persist exclusion: {e}")
         return False
+
+def remove_from_exclusion_list(domain_or_domains: Any) -> bool:
+    """Remove one or more domains/Instagram handles from persistent custom exclusion list."""
+    targets = parse_multiple_exclusion_targets(domain_or_domains)
+    if not targets:
+        return False
+        
+    for t in targets:
+        IGNORE_DOMAINS.discard(t)
+        ALL_EXCLUDED_DOMAINS.discard(t)
+        
+    path = _get_exclusion_file_path()
+    try:
+        current_custom = set()
+        if os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as f:
+                current_custom = {_clean_exclusion_target(l) for l in f if l.strip()}
+        current_custom.difference_update(targets)
+        with open(path, "w", encoding="utf-8") as f:
+            for item in sorted(current_custom):
+                if item:
+                    f.write(f"{item}\n")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to persist exclusion removal: {e}")
+        return False
+
+def get_custom_exclusions() -> List[str]:
+    """Return sorted list of custom user exclusions from disk."""
+    path = _get_exclusion_file_path()
+    if os.path.exists(path):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                return sorted(list({_clean_exclusion_target(l) for l in f if _clean_exclusion_target(l)}))
+        except Exception:
+            return []
+    return []
 
 # Initialize custom exclusions on module load
 load_custom_exclusions()
@@ -333,7 +407,7 @@ class DomainExtractor:
         results = []
         seen_domains: Set[str] = set()
 
-        # 1. Process Instagram Accounts & Handles
+        # 1. Process Instagram Accounts & Handles (Clickable links and explicit IG mentions)
         ig_handles = self.instagram_validator.extract_handles_from_text(text)
         for handle in ig_handles:
             h_clean = handle.lower().strip().replace("@", "")
@@ -356,16 +430,12 @@ class DomainExtractor:
                 "registrar_name": "Instagram"
             })
 
-        # 2. Process Clickable Web Domains (Hyperlinks only)
+        # 2. Process Clickable Web Domains (Hyperlinks only: http://, https://, www.)
         urls = self.extract_urls(text)
 
-        # Expand bio hubs if found
+        # Strictly report links directly contained in the video.
+        # Do not scrape third-party bio hubs (linktree, solo.to, etc.) to prevent injecting external phantom links.
         expanded_urls = list(urls)
-        for raw_url in urls:
-            raw_root = self.get_registered_domain(raw_url)
-            if raw_root in BIO_HUB_DOMAINS:
-                bio_child_urls = self.extract_links_from_bio_hub(raw_url)
-                expanded_urls.extend(bio_child_urls)
 
         for raw_url in expanded_urls:
             final_url = self.unshorten_url(raw_url)

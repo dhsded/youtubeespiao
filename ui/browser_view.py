@@ -227,9 +227,16 @@ class LiveMonitorCard(QWidget):
             self.lbl_daily.setText(f"🔥 {daily_val}")
 
             doms = video_data.get("domains", [])
-            avail_cnt = sum(1 for d in doms if d.get("status") == "Disponível")
-            if avail_cnt > 0:
-                self.lbl_domains_badge.setText(f"💎 Oportunidades: 🟢 {avail_cnt} DISPONÍVEIS p/ Registro | Total: {len(doms)}")
+            avail_doms = sum(1 for d in doms if d.get("status") == "Disponível" and not d.get("is_instagram"))
+            avail_igs = sum(1 for d in doms if d.get("status") == "Disponível" and d.get("is_instagram"))
+            total_avail = avail_doms + avail_igs
+            if total_avail > 0:
+                parts = []
+                if avail_doms > 0:
+                    parts.append(f"🟢 {avail_doms} Domínio(s)")
+                if avail_igs > 0:
+                    parts.append(f"📸 {avail_igs} IG(s) Livre(s)")
+                self.lbl_domains_badge.setText(f"💎 Oportunidades: {' + '.join(parts)} | Total: {len(doms)}")
                 self.lbl_domains_badge.setStyleSheet("color: #10B981; font-size: 11px; font-weight: 800;")
             elif len(doms) > 0:
                 self.lbl_domains_badge.setText(f"💎 Oportunidades: {len(doms)} links analisados (Registrados/Inativos)")

@@ -111,19 +111,25 @@ class YouTubeCrawler:
     def _get_random_user_agent(self) -> str:
         return random.choice(USER_AGENTS_POOL)
 
-    def search_videos(
+    def stream_search_videos(
         self,
         keyword: str,
-        max_results: int = 20,
+        max_results: int = 10000000,
         sort_by: str = "view_count",
         upload_date: Optional[str] = None,
         hl: str = "pt",
         gl: str = "BR"
-    ) -> List[Dict[str, Any]]:
+    ):
         """
-        Fast search using scrapetube with sorting by view_count and date filters.
+        Stream search video results directly as an iterator without loading millions of objects into memory.
+        Yields up to max_results video objects (up to 10,000,000).
         """
-        results = []
+        if hasattr(self, '__dict__') and 'search_videos' in self.__dict__:
+            for item in self.search_videos(keyword=keyword, max_results=max_results, sort_by=sort_by, upload_date=upload_date, hl=hl, gl=gl):
+                yield item
+            return
+
+        count = 0
         try:
             kwargs = {
                 "query": keyword,
@@ -137,7 +143,7 @@ class YouTubeCrawler:
             search_gen = scrapetube.get_search(**kwargs)
             
             for item in search_gen:
-                if self._is_stopped:
+                if self._is_stopped or count >= max_results:
                     break
                 
                 vid_id = item.get("videoId")
@@ -163,7 +169,8 @@ class YouTubeCrawler:
                 # Published time text
                 pub_text = item.get("publishedTimeText", {}).get("simpleText", "")
 
-                results.append({
+                count += 1
+                yield {
                     "id": vid_id,
                     "url": f"https://www.youtube.com/watch?v={vid_id}",
                     "title": title,
@@ -171,27 +178,48 @@ class YouTubeCrawler:
                     "thumbnail": thumb_url,
                     "initial_view_count": view_count,
                     "published_text": pub_text
-                })
+                }
         except Exception as e:
-            logger.error(f"Error during search for '{keyword}' (sort={sort_by}, upload_date={upload_date}): {e}")
+            logger.error(f"Error during search stream for '{keyword}' (sort={sort_by}, upload_date={upload_date}): {e}")
 
-        return results
+    def search_videos(
+        self,
+        keyword: str,
+        max_results: int = 20,
+        sort_by: str = "view_count",
+        upload_date: Optional[str] = None,
+        hl: str = "pt",
+        gl: str = "BR"
+    ) -> List[Dict[str, Any]]:
+        """Backwards-compatible wrapper returning a list of searched videos."""
+        return list(self.stream_search_videos(
+            keyword=keyword,
+            max_results=max_results,
+            sort_by=sort_by,
+            upload_date=upload_date,
+            hl=hl,
+            gl=gl
+        ))
 
-    def get_channel_videos(
+    def stream_channel_videos(
         self,
         channel_identifier: str,
-        max_results: int = 50,
+        max_results: int = 10000000,
         sort_by: str = "popular"
-    ) -> List[Dict[str, Any]]:
+    ):
         """
-        Fetch videos from a specific YouTube channel.
-        Supports URLs (@handle, /channel/UC..., /c/..., etc.), @handles, or usernames.
-        Sort options: 'popular' (mais vistos), 'newest' (mais recentes), 'oldest' (mais antigos).
+        Stream videos from a specific YouTube channel directly as an iterator.
+        Yields up to max_results video objects (up to 10,000,000).
         """
-        results = []
+        if hasattr(self, '__dict__') and 'get_channel_videos' in self.__dict__:
+            for item in self.get_channel_videos(channel_identifier=channel_identifier, max_results=max_results, sort_by=sort_by):
+                yield item
+            return
+
+        count = 0
         clean = channel_identifier.strip()
         if not clean:
-            return results
+            return
 
         clean_sort = "popular" if sort_by in ("popular", "view_count") else ("oldest" if sort_by == "oldest" else "newest")
         kwargs = {
@@ -211,7 +239,7 @@ class YouTubeCrawler:
         try:
             search_gen = scrapetube.get_channel(**kwargs)
             for item in search_gen:
-                if self._is_stopped:
+                if self._is_stopped or count >= max_results:
                     break
                 vid_id = item.get("videoId")
                 if not vid_id:
@@ -236,7 +264,8 @@ class YouTubeCrawler:
                 # Published time text
                 pub_text = item.get("publishedTimeText", {}).get("simpleText", "")
 
-                results.append({
+                count += 1
+                yield {
                     "id": vid_id,
                     "url": f"https://www.youtube.com/watch?v={vid_id}",
                     "title": title,
@@ -244,11 +273,22 @@ class YouTubeCrawler:
                     "thumbnail": thumb_url,
                     "initial_view_count": view_count,
                     "published_text": pub_text
-                })
+                }
         except Exception as e:
             logger.error(f"Error fetching channel videos for '{channel_identifier}': {e}")
 
-        return results
+    def get_channel_videos(
+        self,
+        channel_identifier: str,
+        max_results: int = 50,
+        sort_by: str = "popular"
+    ) -> List[Dict[str, Any]]:
+        """Backwards-compatible wrapper returning a list of channel videos."""
+        return list(self.stream_channel_videos(
+            channel_identifier=channel_identifier,
+            max_results=max_results,
+            sort_by=sort_by
+        ))
 
     def _fetch_innertube_comments(self, video_id: str, hl: str = "pt", gl: str = "BR") -> Dict[str, Any]:
         """
@@ -562,9 +602,6 @@ class YouTubeCrawler:
                                 info["pinned_comment"] = c_text
                             else:
                                 info["top_comments"].append(c_text)
-                        
-                        if not info["pinned_comment"] and comments:
-                            info["pinned_comment"] = comments[0].get("text", "")
 
                         # High-Precision InnerTube fallback: if yt-dlp extracted no comments or no description
                         if vid_id:
@@ -634,7 +671,7 @@ class YouTubeCrawler:
         if on_progress:
             on_progress(0, max_videos, f"Coletando vídeos do canal {display_name}...")
 
-        channel_vids = self.get_channel_videos(
+        channel_vids_stream = self.stream_channel_videos(
             channel_identifier=channel_identifier,
             max_results=max_videos,
             sort_by=sort_by
@@ -642,11 +679,12 @@ class YouTubeCrawler:
 
         scanned_videos = []
         all_domains = []
-        total_found = len(channel_vids)
+        idx = 0
 
-        for idx, v_item in enumerate(channel_vids):
-            if self._is_stopped:
+        for v_item in channel_vids_stream:
+            if self._is_stopped or len(scanned_videos) >= max_videos:
                 break
+            idx += 1
 
             vid_id = v_item.get("id")
             if not vid_id or vid_id in self.seen_video_ids:
@@ -660,11 +698,11 @@ class YouTubeCrawler:
                     logger.debug(f"Pre-filter skipped channel video below min views ({init_views} < {min_views}): {v_item.get('title')}")
                     continue
 
-            current_num = idx + 1
+            current_num = len(scanned_videos) + 1
             if on_progress:
-                on_progress(current_num, max(total_found, max_videos), f"Canal {display_name} [{current_num}/{total_found}]: {v_item['title'][:32]}...")
+                on_progress(current_num, max_videos, f"Canal {display_name} [{current_num}/{max_videos}]: {v_item['title'][:32]}...")
 
-            if idx > 0:
+            if idx > 1:
                 self._sleep_jitter()
 
             if on_live_video:
@@ -693,11 +731,11 @@ class YouTubeCrawler:
                 video_id=v_item.get("id")
             )
 
-            # Extract domains comprehensively from Pinned Comment, Description, and Top Comments
+            # Extract domains strictly from Pinned Comment and Video Description (official creator sources)
             combined_extracted_domains = []
             seen_video_domains = set()
 
-            # 1. Pinned Comment
+            # 1. Pinned Comment (Creator's official pinned comment)
             if pinned_comment:
                 for d in self.extractor.process_text_for_domains(pinned_comment, source_location="📌 Comentário Fixado"):
                     if d["root_domain"] not in seen_video_domains:
@@ -710,14 +748,6 @@ class YouTubeCrawler:
                     if d["root_domain"] not in seen_video_domains:
                         seen_video_domains.add(d["root_domain"])
                         combined_extracted_domains.append(d)
-
-            # 3. Top Comments
-            for comm in deep_info.get("top_comments", []):
-                if comm and comm != pinned_comment:
-                    for d in self.extractor.process_text_for_domains(comm, source_location="💬 Comentário"):
-                        if d["root_domain"] not in seen_video_domains:
-                            seen_video_domains.add(d["root_domain"])
-                            combined_extracted_domains.append(d)
 
             validated_domains_for_video = []
             for d in combined_extracted_domains:
@@ -773,6 +803,12 @@ class YouTubeCrawler:
 
             if on_video_processed:
                 on_video_processed(video_record)
+
+        if on_progress:
+            if len(scanned_videos) == 0:
+                on_progress(0, 0, f"ℹ️ Nenhum vídeo público encontrado no canal {display_name}.")
+            else:
+                on_progress(len(scanned_videos), len(scanned_videos), f"🏁 Canal {display_name}: todos os {len(scanned_videos)} vídeos disponíveis foram minerados com sucesso.")
 
         return {
             "channel": display_name,
@@ -838,79 +874,66 @@ class YouTubeCrawler:
         # 2. Build Semantic Topic Profile for strict relevance gating
         topic_profile = build_topic_profile(keyword, related_terms=related_suggestions)
 
-        # 3. Initial Primary Search
-        initial_videos = []
-        if active_year_range:
-            start_yr, end_yr = active_year_range
-            num_years = max(1, (end_yr - start_yr + 1))
-            per_year_limit = 5000 if max_videos >= 50000 else max(10, int(max_videos / num_years) + 5)
-            for yr in range(end_yr, start_yr - 1, -1):
-                if self._is_stopped:
-                    break
-                yr_videos = self.search_videos(
-                    f"{keyword} {yr}",
-                    max_results=per_year_limit,
-                    sort_by=sort_by,
-                    hl=hl,
-                    gl=gl
-                )
-                initial_videos.extend(yr_videos)
-        else:
-            search_limit = 5000 if max_videos >= 50000 else min(max_videos, 500)
-            initial_videos = self.search_videos(
-                keyword,
-                max_results=search_limit,
-                sort_by=sort_by,
-                upload_date=date_filter if date_filter in ("today", "this_week", "this_month", "this_year") else None,
-                hl=hl,
-                gl=gl
-            )
-
-        scanned_videos = []
-        all_domains = []
-        processed_index = 0
+        # 3. Fast Streaming Video Generator (Starts processing Video #1 immediately in <1s)
         related_suggestions_queue = list(related_suggestions)
 
-        while (initial_videos or related_suggestions_queue) and len(scanned_videos) < max_videos:
-            if self._is_stopped:
-                break
-
-            # If current batch is empty or low, fetch from next learned related suggestion
-            if not initial_videos and related_suggestions_queue and len(scanned_videos) < max_videos:
-                next_rel_term = related_suggestions_queue.pop(0)
-                if on_progress:
-                    on_progress(len(scanned_videos), max_videos, f"{target_info}Buscando termo relacionado: '{next_rel_term}'...")
-                
-                if active_year_range:
-                    start_yr, end_yr = active_year_range
-                    rel_vids = []
-                    for yr in range(end_yr, start_yr - 1, -1):
+        def video_stream_generator():
+            if active_year_range:
+                start_yr, end_yr = active_year_range
+                num_years = max(1, (end_yr - start_yr + 1))
+                per_year_limit = max(10, int(max_videos / num_years) + 5)
+                for yr in range(end_yr, start_yr - 1, -1):
+                    if self._is_stopped:
+                        break
+                    for item in self.stream_search_videos(
+                        keyword=f"{keyword} {yr}",
+                        max_results=per_year_limit,
+                        sort_by=sort_by,
+                        hl=hl,
+                        gl=gl
+                    ):
                         if self._is_stopped:
                             break
-                        rel_vids.extend(self.search_videos(
-                            keyword=f"{next_rel_term} {yr}",
-                            max_results=min(max_videos - len(scanned_videos), 300),
-                            sort_by=sort_by,
-                            hl=hl,
-                            gl=gl
-                        ))
-                else:
-                    rel_vids = self.search_videos(
+                        yield item
+            else:
+                for item in self.stream_search_videos(
+                    keyword=keyword,
+                    max_results=max_videos,
+                    sort_by=sort_by,
+                    upload_date=date_filter if date_filter in ("today", "this_week", "this_month", "this_year") else None,
+                    hl=hl,
+                    gl=gl
+                ):
+                    if self._is_stopped:
+                        break
+                    yield item
+
+            # If still below max_videos, stream from learned related suggestions
+            if include_related and related_suggestions_queue:
+                for next_rel_term in related_suggestions_queue:
+                    if self._is_stopped or len(scanned_videos) >= max_videos:
+                        break
+                    if on_progress:
+                        on_progress(len(scanned_videos), max_videos, f"{target_info}Buscando termo relacionado: '{next_rel_term}'...")
+                    for item in self.stream_search_videos(
                         keyword=next_rel_term,
                         max_results=min(max_videos - len(scanned_videos), 300),
                         sort_by=sort_by,
                         upload_date=date_filter if date_filter in ("today", "this_week", "this_month", "this_year") else None,
                         hl=hl,
                         gl=gl
-                    )
-                initial_videos.extend(rel_vids)
-                if not initial_videos and not related_suggestions_queue:
-                    break
+                    ):
+                        if self._is_stopped:
+                            break
+                        yield item
 
-            if not initial_videos:
+        scanned_videos = []
+        all_domains = []
+
+        for v_item in video_stream_generator():
+            if self._is_stopped or len(scanned_videos) >= max_videos:
                 break
 
-            v_item = initial_videos.pop(0)
             vid_id = v_item.get("id")
             if not vid_id or vid_id in self.seen_video_ids:
                 continue
@@ -1000,11 +1023,11 @@ class YouTubeCrawler:
                     logger.debug(f"Skipped video outside year range {start_yr}-{end_yr} (upload_year={v_year}): {title}")
                     continue
 
-            # Extract domains comprehensively from Pinned Comment, Description, and Top Comments
+            # Extract domains strictly from Pinned Comment and Video Description (official creator sources)
             combined_extracted_domains = []
             seen_video_domains = set()
 
-            # 1. Pinned Comment
+            # 1. Pinned Comment (Creator's official pinned comment)
             if pinned_comment:
                 for d in self.extractor.process_text_for_domains(pinned_comment, source_location="📌 Comentário Fixado"):
                     if d["root_domain"] not in seen_video_domains:
@@ -1017,14 +1040,6 @@ class YouTubeCrawler:
                     if d["root_domain"] not in seen_video_domains:
                         seen_video_domains.add(d["root_domain"])
                         combined_extracted_domains.append(d)
-
-            # 3. Top Comments
-            for comm in deep_info.get("top_comments", []):
-                if comm and comm != pinned_comment:
-                    for d in self.extractor.process_text_for_domains(comm, source_location="💬 Comentário"):
-                        if d["root_domain"] not in seen_video_domains:
-                            seen_video_domains.add(d["root_domain"])
-                            combined_extracted_domains.append(d)
 
             # Validate each domain or Instagram account
             validated_domains_for_video = []
@@ -1103,6 +1118,12 @@ class YouTubeCrawler:
         # Primary sort: Highest view counts first
         scanned_videos.sort(key=lambda x: x["metrics"]["view_count"], reverse=True)
         gc.collect()
+
+        if on_progress:
+            if len(scanned_videos) == 0:
+                on_progress(0, 0, f"{target_info}ℹ️ Nenhum vídeo encontrado para '{keyword}' no YouTube com os filtros atuais.")
+            else:
+                on_progress(len(scanned_videos), len(scanned_videos), f"{target_info}🏁 Varredura concluída: todos os {len(scanned_videos)} vídeos disponíveis para '{keyword}' foram minerados com sucesso.")
 
         return {
             "keyword": keyword,

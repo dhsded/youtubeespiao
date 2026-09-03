@@ -130,6 +130,8 @@ class VideoTableView(QWidget):
         self.page_size = 25
         self.only_available_filter = False
         self.search_filter_text = ""
+        self.domain_filter_target: Optional[str] = None
+        self.domain_filter_clean: Optional[str] = None
 
         self._init_ui()
 
@@ -176,6 +178,8 @@ class VideoTableView(QWidget):
 
         header = self.table.horizontalHeader()
         header.setSectionsMovable(True)
+        header.setDragEnabled(True)
+        header.setHighlightSections(True)
         header.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         header.customContextMenuRequested.connect(self._on_header_context_menu)
         header.sectionClicked.connect(self._on_header_section_clicked)
@@ -324,7 +328,11 @@ class VideoTableView(QWidget):
         self._apply_filter_and_render()
 
     def _on_search_changed(self, text: str):
-        self.search_filter_text = text.strip().lower()
+        t = text.strip()
+        if not t.startswith("[Domínio:"):
+            self.domain_filter_target = None
+            self.domain_filter_clean = None
+            self.search_filter_text = t.lower()
         self.current_page = 1
         self._apply_filter_and_render()
 
@@ -353,7 +361,21 @@ class VideoTableView(QWidget):
                 if any(d.get("status") == "Disponível" for d in v.get("domains", []))
             ]
 
-        if self.search_filter_text:
+        if self.domain_filter_clean:
+            # STRICT DOMAIN FILTER: Only videos that genuinely contain this domain in their domains list!
+            target = self.domain_filter_clean
+            filtered = [
+                v for v in filtered
+                if any(
+                    target == (d.get("root_domain") or "").strip().lower()
+                    or target in (d.get("root_domain") or "").strip().lower()
+                    or target == (d.get("display_name") or "").replace("📸 @", "").replace("@", "").strip().lower()
+                    or target in (d.get("raw_url") or "").strip().lower()
+                    or target in (d.get("final_url") or "").strip().lower()
+                    for d in v.get("domains", [])
+                )
+            ]
+        elif self.search_filter_text:
             filtered = [
                 v for v in filtered
                 if self.search_filter_text in v.get("title", "").lower()
@@ -493,8 +515,21 @@ class VideoTableView(QWidget):
 
         self.table.setSortingEnabled(True)
 
+    def filter_by_exact_domain(self, domain_target: str):
+        """Filter the video table strictly by videos containing the specified domain or Instagram account."""
+        self.domain_filter_target = (domain_target or "").strip()
+        clean = self.domain_filter_target.replace("📸 @", "").replace("📸", "").replace("@", "").strip().lower()
+        self.domain_filter_clean = clean
+        self.input_search.blockSignals(True)
+        self.input_search.setText(f"[Domínio: {domain_target}]")
+        self.input_search.blockSignals(False)
+        self.current_page = 1
+        self._apply_filter_and_render()
+
     def set_search_query(self, text: str):
         """Set search query programmatically and filter the table."""
+        self.domain_filter_target = None
+        self.domain_filter_clean = None
         self.input_search.setText(text)
         self._on_search_changed(text)
 
@@ -524,9 +559,27 @@ class AssociatedVideosDialog(QDialog):
         lbl_icon.setStyleSheet("font-size: 24px;")
         h_layout.addWidget(lbl_icon)
 
+        # Determine URL to open
+        open_url = ""
+        for v in self.associated_videos:
+            if v.get("final_url"):
+                open_url = v["final_url"]
+                break
+            elif v.get("raw_url"):
+                open_url = v["raw_url"]
+                break
+        if not open_url:
+            clean_name = self.domain_name.replace("📸 @", "").replace("📸", "").replace("@", "").strip()
+            if "instagram.com" in self.domain_name or self.domain_name.startswith("📸"):
+                open_url = f"https://instagram.com/{clean_name}"
+            else:
+                open_url = f"https://{clean_name}"
+
         v_info = QVBoxLayout()
-        lbl_dom = QLabel(f"Domínio / Link: <span style='color: #FFFFFF; font-weight: 800;'>{self.domain_name}</span>")
+        lbl_dom = QLabel(f"Domínio / Link: <a href='{open_url}' style='color: #38BDF8; font-weight: 800; text-decoration: underline;'>{self.domain_name} ↗</a>")
+        lbl_dom.setOpenExternalLinks(True)
         lbl_dom.setStyleSheet("font-size: 14px; font-weight: 600;")
+        lbl_dom.setToolTip(f"🌐 Clique para abrir '{open_url}' no seu navegador padrão")
         lbl_count = QLabel(f"Encontrado em <b>{len(self.associated_videos)}</b> vídeo(s) no YouTube")
         lbl_count.setStyleSheet("color: #AAAAAA; font-size: 12px;")
         v_info.addWidget(lbl_dom)
@@ -669,6 +722,8 @@ class DomainTableView(QWidget):
     buy_domain_requested = pyqtSignal(str)
     open_video_requested = pyqtSignal(str)
     domain_excluded_requested = pyqtSignal(str)
+    domains_excluded_requested = pyqtSignal(list)
+    manage_exclusions_requested = pyqtSignal()
     filter_videos_by_domain_requested = pyqtSignal(str)
 
     COLUMN_HEADERS = [
@@ -733,6 +788,14 @@ class DomainTableView(QWidget):
         self.btn_columns.clicked.connect(self._show_column_menu)
         toolbar.addWidget(self.btn_columns)
 
+        # Manage Exclusions Button
+        self.btn_exclusions = QPushButton("🚫 Excluir Domínios...")
+        self.btn_exclusions.setObjectName("btn_table_action")
+        self.btn_exclusions.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.btn_exclusions.setToolTip("Adicionar múltiplos domínios ou perfis à lista de exclusão")
+        self.btn_exclusions.clicked.connect(self.manage_exclusions_requested.emit)
+        toolbar.addWidget(self.btn_exclusions)
+
         self.input_search = QLineEdit()
         self.input_search.setPlaceholderText("🔍 Buscar domínio ou termo...")
         self.input_search.setFixedWidth(220)
@@ -748,9 +811,12 @@ class DomainTableView(QWidget):
         self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.table.customContextMenuRequested.connect(self._on_table_context_menu)
         self.table.cellDoubleClicked.connect(self._on_cell_double_clicked)
+        self.table.cellClicked.connect(self._on_cell_clicked)
 
         header = self.table.horizontalHeader()
         header.setSectionsMovable(True)
+        header.setDragEnabled(True)
+        header.setHighlightSections(True)
         header.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         header.customContextMenuRequested.connect(self._on_header_context_menu)
         header.sectionClicked.connect(self._on_header_section_clicked)
@@ -786,6 +852,7 @@ class DomainTableView(QWidget):
 
         self.table.setAlternatingRowColors(True)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.table.setSelectionMode(QTableWidget.SelectionMode.ExtendedSelection)
         self.table.setSortingEnabled(False)
 
         layout.addWidget(self.table)
@@ -917,6 +984,11 @@ class DomainTableView(QWidget):
             if not key:
                 continue
 
+            v_id = d.get("video_id")
+            v_url = d.get("video_url")
+            if not v_id and not v_url:
+                continue
+
             v_metrics = d.get("video_metrics", {})
             d_views = v_metrics.get("daily_views", 0)
             t_views = v_metrics.get("view_count", 0)
@@ -926,16 +998,18 @@ class DomainTableView(QWidget):
             y_views = v_metrics.get("yearly_views", 0)
 
             video_entry = {
-                "video_id": d.get("video_id"),
+                "video_id": v_id,
                 "video_title": d.get("video_title", "Vídeo"),
-                "video_url": d.get("video_url", ""),
+                "video_url": v_url or "",
                 "channel_name": d.get("channel_name", ""),
                 "publish_date": v_metrics.get("publish_date", "Recente"),
                 "daily_views": d_views,
                 "view_count": t_views,
                 "views_90d": v_90d,
                 "hourly_views": h_views,
-                "source_location": d.get("source_location", "")
+                "source_location": d.get("source_location", ""),
+                "raw_url": d.get("raw_url", ""),
+                "final_url": d.get("final_url", "")
             }
 
             if key not in grouped_dict:
@@ -1092,11 +1166,18 @@ class DomainTableView(QWidget):
             type_item.setData(Qt.ItemDataRole.UserRole, d)
             self.table.setItem(row, 1, type_item)
 
-            # 2. Target Name / Root Domain
-            domain_item = QTableWidgetItem(display_name)
-            domain_item.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
+            # 2. Target Name / Root Domain (Interactive Clickable Link)
+            domain_item = QTableWidgetItem(f"{display_name} ↗")
+            domain_font = QFont("Segoe UI", 10, QFont.Weight.Bold)
+            domain_font.setUnderline(True)
+            domain_item.setFont(domain_font)
             if status == "Disponível":
                 domain_item.setForeground(QColor("#16A34A"))
+            elif status == "Inativo":
+                domain_item.setForeground(QColor("#D97706"))
+            else:
+                domain_item.setForeground(QColor("#0284C7"))
+            domain_item.setToolTip(f"🌐 Clique para abrir '{display_name}' diretamente no seu navegador padrão")
             domain_item.setData(Qt.ItemDataRole.UserRole, d)
             self.table.setItem(row, 2, domain_item)
 
@@ -1288,6 +1369,23 @@ class DomainTableView(QWidget):
 
             self.table.setCellWidget(row, 14, action_widget)
 
+    def _on_cell_clicked(self, row: int, col: int):
+        """Single clicking column 2 (Domínio / Conta IG) opens the target link directly in default browser."""
+        if col == 2:
+            d = self._get_domain_for_row(row)
+            if d:
+                url = d.get("final_url") or d.get("raw_url") or d.get("buy_link")
+                if not url:
+                    root = d.get("root_domain")
+                    if root:
+                        url = f"https://{root}"
+                if url:
+                    if not url.startswith(("http://", "https://")):
+                        url = f"https://{url}"
+                    from PyQt6.QtGui import QDesktopServices
+                    from PyQt6.QtCore import QUrl
+                    QDesktopServices.openUrl(QUrl(url))
+
     def _on_cell_double_clicked(self, row: int, col: int):
         """Double clicking any domain row opens its associated videos modal."""
         d = self._get_domain_for_row(row)
@@ -1390,11 +1488,48 @@ class DomainTableView(QWidget):
 
         menu.addSeparator()
 
-        action_exclude = QAction("🚫 Adicionar à Lista de Exclusão (Ignorar Domínio)", menu)
-        action_exclude.triggered.connect(lambda: self._on_exclude_domain(display_name, root_domain))
-        menu.addAction(action_exclude)
+        selected_rows = sorted(list(set(index.row() for index in self.table.selectedIndexes())))
+        if len(selected_rows) > 1:
+            action_exclude_multi = QAction(f"🚫 Adicionar Selecionados ({len(selected_rows)}) à Lista de Exclusão", menu)
+            action_exclude_multi.triggered.connect(self._on_exclude_selected_domains)
+            menu.addAction(action_exclude_multi)
+        else:
+            action_exclude = QAction("🚫 Adicionar à Lista de Exclusão (Ignorar Domínio)", menu)
+            action_exclude.triggered.connect(lambda: self._on_exclude_domain(display_name, root_domain))
+            menu.addAction(action_exclude)
 
         menu.exec(self.table.viewport().mapToGlobal(pos))
+
+    def _on_exclude_selected_domains(self):
+        selected_rows = sorted(list(set(index.row() for index in self.table.selectedIndexes())))
+        if not selected_rows:
+            return
+
+        targets_to_exclude = []
+        for r in selected_rows:
+            if 0 <= r < len(self.filtered_domains_data):
+                item_data = self.filtered_domains_data[r]
+                t = item_data.get("root_domain") or item_data.get("display_name") or ""
+                if t and t not in targets_to_exclude:
+                    targets_to_exclude.append(t)
+
+        if not targets_to_exclude:
+            return
+
+        reply = QMessageBox.question(
+            self,
+            "Adicionar à Lista de Exclusão em Lote",
+            f"Deseja adicionar os {len(targets_to_exclude)} domínios/perfis selecionados à Lista de Exclusão?\n\n"
+            f"• Eles serão removidos imediatamente desta tabela.\n"
+            f"• Eles nunca mais aparecerão nesta ou em futuras varreduras.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            from core.domain_extractor import add_to_exclusion_list
+            add_to_exclusion_list(targets_to_exclude)
+            self.domains_excluded_requested.emit(targets_to_exclude)
+            for t in targets_to_exclude:
+                self.domain_excluded_requested.emit(t)
 
     def _on_exclude_domain(self, display_name: str, root_domain: str):
         target = root_domain or display_name
@@ -1409,7 +1544,9 @@ class DomainTableView(QWidget):
         )
         if reply == QMessageBox.StandardButton.Yes:
             from core.domain_extractor import add_to_exclusion_list
-            add_to_exclusion_list(clean_target)
+            targets = [clean_target]
             if root_domain and root_domain != clean_target:
-                add_to_exclusion_list(root_domain)
+                targets.append(root_domain)
+            add_to_exclusion_list(targets)
+            self.domains_excluded_requested.emit(targets)
             self.domain_excluded_requested.emit(clean_target)
