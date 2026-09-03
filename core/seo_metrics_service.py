@@ -87,6 +87,10 @@ class SeoMetricsService:
             total_views=total_views
         )
 
+        if len(self._cache) >= 20000:
+            for old_k in list(self._cache.keys())[:2000]:
+                self._cache.pop(old_k, None)
+
         self._cache[domain] = metrics
         return metrics
 

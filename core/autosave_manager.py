@@ -42,18 +42,28 @@ class AutoSaveManager:
         self.downloads_dir = os.path.join(user_home, "Downloads")
         if not os.path.exists(self.downloads_dir):
             self.downloads_dir = user_home
+        self._last_save_time: float = 0.0
+        self._last_backup_time: float = 0.0
 
     def save_session(
         self,
         videos_data: List[Dict[str, Any]],
         domains_data: List[Dict[str, Any]],
         keywords: Optional[List[str]] = None,
-        search_params: Optional[Dict[str, Any]] = None
+        search_params: Optional[Dict[str, Any]] = None,
+        force: bool = False,
+        include_excel: bool = False
     ) -> bool:
         """
-        Atomically save current mined data and parameters to local AppData and emergency Downloads backup.
+        Atomically save current mined data and parameters to local AppData.
+        Emergency Downloads backup (Excel) is throttled to prevent disk/CPU freezing.
         """
         if not videos_data and not domains_data:
+            return False
+
+        now = datetime.now().timestamp()
+        # Preventive Throttle: Don't write to disk more than once every 25s unless forced
+        if not force and (now - self._last_save_time) < 25.0:
             return False
 
         payload = {
@@ -79,10 +89,13 @@ class AutoSaveManager:
                 except Exception:
                     pass
             os.rename(temp_file, self.session_file)
+            self._last_save_time = now
 
-            # 2. Emergency Backup to Downloads folder (Excel & JSON) if there are domains
-            if len(domains_data) > 0 or len(videos_data) > 0:
+            # 2. Emergency Backup to Downloads folder (Excel) only when forced or on 5-min intervals
+            should_export_backup = include_excel or force or ((now - self._last_backup_time) >= 300.0)
+            if should_export_backup and (len(domains_data) > 0 or len(videos_data) > 0):
                 self._export_downloads_backup(videos_data, domains_data, payload)
+                self._last_backup_time = now
 
             return True
 

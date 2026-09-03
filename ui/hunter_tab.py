@@ -16,12 +16,14 @@ Features:
 
 import os
 import time
+import gc
 from typing import List, Dict, Any, Optional, Tuple
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel,
     QLineEdit, QPushButton, QComboBox, QSpinBox, QProgressBar,
     QTabWidget, QPlainTextEdit, QFrame, QFileDialog, QMessageBox,
-    QCheckBox, QDialog, QListWidget, QListWidgetItem, QDialogButtonBox
+    QCheckBox, QDialog, QListWidget, QListWidgetItem, QDialogButtonBox,
+    QApplication
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer
 from PyQt6.QtGui import QFont, QCursor, QIntValidator
@@ -34,6 +36,10 @@ from core.autosave_manager import AutoSaveManager
 from core.profile_manager import (
     load_default_profile, save_default_profile, launch_instance_with_target,
     get_named_profiles, save_named_profile, delete_named_profile
+)
+from core.niche_catalog import (
+    NICHE_CATALOG, get_available_niches, get_subniches_for_niche,
+    generate_queries_for_subniche, get_all_subniches_flat
 )
 from ui.video_table_model import VideoTableView, DomainTableView
 from ui.seo_table_view import SeoAuthorityTableView
@@ -269,6 +275,8 @@ class CrawlerThread(QThread):
         include_related: bool = True,
         excluded_langs: Optional[List[str]] = None,
         loop_24h: bool = False,
+        selected_niche: Optional[str] = None,
+        selected_subniche: Optional[str] = None,
         parent=None
     ):
         super().__init__(parent)
@@ -284,6 +292,8 @@ class CrawlerThread(QThread):
         self.include_related = include_related
         self.excluded_langs = excluded_langs or []
         self.loop_24h = loop_24h
+        self.selected_niche = selected_niche
+        self.selected_subniche = selected_subniche
         self.crawler = YouTubeCrawler(
             proxy_url=APP_SETTINGS.get("proxy_url"),
             min_delay=0.1 if fast_mode else APP_SETTINGS.get("min_delay", 1.0),
@@ -350,6 +360,76 @@ class CrawlerThread(QThread):
 
                         if not self._is_interrupted and len(self.keywords) > 1:
                             time.sleep(1.0 if self.fast_mode else 2.5)
+
+                elif self.search_mode == "niches":
+                    # Nichos & Subnichos Mode: Structured hierarchical sweep
+                    niche_tasks = []
+                    if not self.selected_niche or self.selected_niche == "all":
+                        niche_tasks = get_all_subniches_flat()
+                    else:
+                        subniches = get_subniches_for_niche(self.selected_niche)
+                        if not self.selected_subniche or self.selected_subniche == "all":
+                            for s in subniches:
+                                qs = generate_queries_for_subniche(self.selected_niche, s)
+                                niche_tasks.append({"niche": self.selected_niche, "subniche": s, "queries": qs})
+                        else:
+                            qs = generate_queries_for_subniche(self.selected_niche, self.selected_subniche)
+                            niche_tasks.append({"niche": self.selected_niche, "subniche": self.selected_subniche, "queries": qs})
+
+                    total_tasks = len(niche_tasks)
+                    for task_idx, task_info in enumerate(niche_tasks):
+                        if self._is_interrupted:
+                            break
+                        n_name = task_info["niche"]
+                        s_name = task_info["subniche"]
+                        queries = task_info["queries"]
+
+                        self.active_keyword_changed.emit(
+                            s_name,
+                            f"{n_name} ({task_idx + 1}/{total_tasks})",
+                            task_idx + 1,
+                            total_tasks
+                        )
+
+                        for q_idx, q in enumerate(queries):
+                            if self._is_interrupted:
+                                break
+                            self._wait_if_paused()
+
+                            self.progress_updated.emit(
+                                0, self.max_videos,
+                                f"[Ciclo {cycle}] {n_name} → {s_name} ('{q}')..."
+                            )
+
+                            def on_prog_wrapped_niche(cur, tot, msg):
+                                self._wait_if_paused()
+                                self.progress_updated.emit(cur, tot, f"[Ciclo {cycle}] {msg}")
+
+                            results = self.crawler.process_keyword(
+                                keyword=q,
+                                target_lang=self.selected_lang,
+                                max_videos=self.max_videos,
+                                min_views=self.min_views,
+                                sort_by=self.sort_by,
+                                date_filter=self.date_filter,
+                                year_range=self.year_range,
+                                include_related=self.include_related,
+                                excluded_langs=self.excluded_langs,
+                                hl="pt" if self.selected_lang == "pt" else "en",
+                                gl="BR" if self.selected_lang == "pt" else "US",
+                                display_label=f"{s_name}",
+                                on_live_video=lambda u, t: self.live_video_analyzed.emit(u, t),
+                                on_video_processed=lambda v: self.video_found.emit(v),
+                                on_domain_found=lambda d: self.domain_found.emit(d),
+                                on_progress=on_prog_wrapped_niche
+                            )
+
+                            total_vids_count += results.get("total_videos", 0)
+                            total_doms_count += results.get("total_domains", 0)
+                            total_avail_count += results.get("available_domains", 0)
+
+                            if not self._is_interrupted and len(queries) > 1:
+                                time.sleep(0.35 if self.fast_mode else 1.2)
 
                 else:
                     # Keyword Mode: Standard search
@@ -443,6 +523,18 @@ class HunterTab(QWidget):
         
         self.all_videos: List[Dict[str, Any]] = []
         self.all_domains: List[Dict[str, Any]] = []
+
+        # Preventive High-Performance O(1) Sets & Batch Buffers
+        self._seen_video_ids: set = set()
+        self._seen_domain_keys: set = set()
+        self._pending_videos_buffer: List[Dict[str, Any]] = []
+        self._pending_domains_buffer: List[Dict[str, Any]] = []
+        self._processed_videos_counter: int = 0
+
+        # UI Batch Timer: Flushes updates smoothly to prevent UI freezes
+        self._ui_batch_timer = QTimer(self)
+        self._ui_batch_timer.setInterval(250)
+        self._ui_batch_timer.timeout.connect(self._flush_pending_ui_batch)
 
         # Auto-Save & Crash Recovery Manager
         self.autosave_manager = AutoSaveManager()
@@ -593,6 +685,7 @@ class HunterTab(QWidget):
         self.log_view = QPlainTextEdit()
         self.log_view.setObjectName("log_view")
         self.log_view.setReadOnly(True)
+        self.log_view.setMaximumBlockCount(2000)
         self.results_tabs.addTab(self.log_view, "📜 Logs em Tempo Real")
 
         main_layout.addWidget(self.results_tabs, 1)
@@ -676,17 +769,34 @@ class HunterTab(QWidget):
         self.combo_mode = QComboBox()
         self.combo_mode.addItem("🎯 Palavras-chave", "keywords")
         self.combo_mode.addItem("📺 Canais do YouTube", "channels")
-        self.combo_mode.setMinimumWidth(155)
-        self.combo_mode.setMaximumWidth(175)
+        self.combo_mode.addItem("🌳 Nichos & Subnichos", "niches")
+        self.combo_mode.setMinimumWidth(160)
+        self.combo_mode.setMaximumWidth(185)
         self.combo_mode.currentIndexChanged.connect(self._on_search_mode_changed)
         row1.addWidget(self.combo_mode)
 
-        # Search Target Input Bar
+        # Search Target Input Bar (for keywords & channels)
         self.input_target = QLineEdit()
         self.input_target.setPlaceholderText("Digite termos de busca ou canais (ex: GTA, dropshipping, receitas fitness)...")
         self.input_target.setMinimumWidth(260)
         self.input_target.returnPressed.connect(self._on_start_or_resume)
         row1.addWidget(self.input_target, 1)
+
+        # Niche & Sub-Niche Selectors (for niches mode)
+        self.combo_niche = QComboBox()
+        self.combo_niche.setMinimumWidth(200)
+        self.combo_niche.addItem("🌐 Todos os Nichos", "all")
+        for n_name in get_available_niches():
+            self.combo_niche.addItem(n_name, n_name)
+        self.combo_niche.currentIndexChanged.connect(self._on_niche_changed)
+        self.combo_niche.setVisible(False)
+        row1.addWidget(self.combo_niche, 1)
+
+        self.combo_subniche = QComboBox()
+        self.combo_subniche.setMinimumWidth(200)
+        self.combo_subniche.setVisible(False)
+        row1.addWidget(self.combo_subniche, 1)
+        self._populate_subniches()
 
         # Saved Preset Mode Selector (Named Profiles List)
         lbl_presets = QLabel("📁 Modo Salvo:")
@@ -979,6 +1089,18 @@ class HunterTab(QWidget):
             if m_idx >= 0:
                 self.combo_mode.setCurrentIndex(m_idx)
 
+            # Niche & Sub-niche
+            niche = profile.get("selected_niche")
+            if niche:
+                n_idx = self.combo_niche.findData(niche)
+                if n_idx >= 0:
+                    self.combo_niche.setCurrentIndex(n_idx)
+            subniche = profile.get("selected_subniche")
+            if subniche:
+                s_idx = self.combo_subniche.findData(subniche)
+                if s_idx >= 0:
+                    self.combo_subniche.setCurrentIndex(s_idx)
+
             # Language
             lang = profile.get("target_lang", "global")
             l_idx = self.combo_lang.findData(lang)
@@ -1028,6 +1150,8 @@ class HunterTab(QWidget):
         """Extract current active UI settings into a persistent dictionary."""
         return {
             "search_mode": self.combo_mode.currentData(),
+            "selected_niche": self.combo_niche.currentData(),
+            "selected_subniche": self.combo_subniche.currentData(),
             "target_lang": self.combo_lang.currentData(),
             "excluded_countries": list(self.excluded_countries),
             "date_filter": self.combo_date.currentData(),
@@ -1141,12 +1265,33 @@ class HunterTab(QWidget):
         dialog.exclusions_updated.connect(self._on_domains_excluded)
         dialog.exec()
 
+    def _populate_subniches(self):
+        """Populate the sub-niche combo based on currently selected main niche."""
+        self.combo_subniche.blockSignals(True)
+        self.combo_subniche.clear()
+        selected_niche = self.combo_niche.currentData()
+        if not selected_niche or selected_niche == "all":
+            self.combo_subniche.addItem("⭐ Todos os Subnichos do Catálogo", "all")
+        else:
+            self.combo_subniche.addItem("⭐ Todos os Subnichos do Nicho", "all")
+            sub_list = get_subniches_for_niche(selected_niche)
+            for sub in sub_list:
+                self.combo_subniche.addItem(sub, sub)
+        self.combo_subniche.blockSignals(False)
+
+    def _on_niche_changed(self):
+        self._populate_subniches()
+
     def _on_search_mode_changed(self):
         mode = self.combo_mode.currentData()
         self.combo_sort.clear()
 
         if mode == "channels":
-            self.input_target.setPlaceholderText("Digite canal ou lista de canais (ex: @GameplayRJ, @alanzoka, https://youtube.com/@canal)...")
+            self.input_target.setVisible(True)
+            self.combo_niche.setVisible(False)
+            self.combo_subniche.setVisible(False)
+            self.btn_batch_txt.setVisible(True)
+            self.input_target.setPlaceholderText("Digite canal ou lista de canais (ex: @canal1, @canal2, https://youtube.com/@canal)...")
             self.combo_lang.setVisible(False)
             self.btn_exclude_countries.setVisible(False)
             self.combo_date.setVisible(False)
@@ -1155,7 +1300,24 @@ class HunterTab(QWidget):
             self.combo_sort.addItem("🔥 Mais Populares (Padrão)", "popular")
             self.combo_sort.addItem("📅 Mais Recentes", "newest")
             self.combo_sort.addItem("⏳ Mais Antigos", "oldest")
+        elif mode == "niches":
+            self.input_target.setVisible(False)
+            self.combo_niche.setVisible(True)
+            self.combo_subniche.setVisible(True)
+            self.btn_batch_txt.setVisible(False)
+            self.combo_lang.setVisible(True)
+            self._on_lang_changed()
+            self.combo_date.setVisible(True)
+            self._on_date_filter_changed()
+            self.chk_include_related.setVisible(True)
+            self.combo_sort.addItem("🔥 Mais Vistos (Padrão)", "view_count")
+            self.combo_sort.addItem("🎯 Relevância", "relevance")
+            self.combo_sort.addItem("📅 Mais Recentes", "upload_date")
         else:
+            self.input_target.setVisible(True)
+            self.combo_niche.setVisible(False)
+            self.combo_subniche.setVisible(False)
+            self.btn_batch_txt.setVisible(True)
             self.input_target.setPlaceholderText("Digite termos de busca (ex: GTA, dropshipping, marketing digital)...")
             self.combo_lang.setVisible(True)
             self._on_lang_changed()
@@ -1255,20 +1417,28 @@ class HunterTab(QWidget):
             self.telemetry_timer.start()
             return
 
-        raw_text = self.input_target.text().strip()
         search_mode = self.combo_mode.currentData()
+        selected_niche = self.combo_niche.currentData() if search_mode == "niches" else None
+        selected_subniche = self.combo_subniche.currentData() if search_mode == "niches" else None
 
-        if not raw_text:
-            msg = "Por favor, digite um canal ou lista de canais (ex: @canal1, @canal2)." if search_mode == "channels" else "Por favor, digite pelo menos uma palavra-chave."
-            QMessageBox.warning(self, "Atenção", msg)
-            return
+        if search_mode == "niches":
+            n_name = self.combo_niche.currentText()
+            s_name = self.combo_subniche.currentText()
+            targets = [f"{n_name} - {s_name}"]
+            raw_text = targets[0]
+        else:
+            raw_text = self.input_target.text().strip()
+            if not raw_text:
+                msg = "Por favor, digite um canal ou lista de canais (ex: @canal1, @canal2)." if search_mode == "channels" else "Por favor, digite pelo menos uma palavra-chave."
+                QMessageBox.warning(self, "Atenção", msg)
+                return
+            targets = [k.strip() for k in raw_text.replace("\n", ",").replace(";", ",").split(",") if k.strip()]
 
-        targets = [k.strip() for k in raw_text.replace("\n", ",").replace(";", ",").split(",") if k.strip()]
-        selected_lang = self.combo_lang.currentData() if search_mode == "keywords" else "pt"
-        date_filter = self.combo_date.currentData() if search_mode == "keywords" else "all_time"
+        selected_lang = self.combo_lang.currentData() if search_mode in ("keywords", "niches") else "pt"
+        date_filter = self.combo_date.currentData() if search_mode in ("keywords", "niches") else "all_time"
         
         # Strictly enforce year boundaries if specified
-        if search_mode == "keywords":
+        if search_mode in ("keywords", "niches"):
             if date_filter == "custom_range":
                 s_yr = self.spin_year_start.value()
                 e_yr = self.spin_year_end.value()
@@ -1285,13 +1455,14 @@ class HunterTab(QWidget):
         max_vids = 10000000 if self.chk_unlimited.isChecked() else self.spin_max.value()
         sort_by = self.combo_sort.currentData()
         fast_mode = self.chk_fast_mode.isChecked()
-        include_related = self.chk_include_related.isChecked() if search_mode == "keywords" else False
+        include_related = self.chk_include_related.isChecked() if search_mode in ("keywords", "niches") else False
         loop_24h = self.chk_mode_24h.isChecked()
 
         self.is_paused = False
         self.start_time = time.time()
         self.target_video_count = max_vids * len(targets)
         self.telemetry_timer.start()
+        self._ui_batch_timer.start()
 
         self.btn_start.setEnabled(False)
         self.btn_start.setText("🚀 Mineração Ativa")
@@ -1300,7 +1471,13 @@ class HunterTab(QWidget):
         self.btn_stop.setEnabled(True)
         self.progress_bar.setValue(0)
 
-        mode_title = f"canais ({len(targets)} canais)" if search_mode == "channels" else f"termos ({len(targets)} termos)"
+        if search_mode == "niches":
+            mode_title = f"nicho [{targets[0]}]"
+        elif search_mode == "channels":
+            mode_title = f"canais ({len(targets)} canais)"
+        else:
+            mode_title = f"termos ({len(targets)} termos)"
+
         filter_details = []
         if min_views > 0:
             filter_details.append(f"Mín. Views: {min_views:,}")
@@ -1311,7 +1488,7 @@ class HunterTab(QWidget):
         details_str = f" | {' • '.join(filter_details)}" if filter_details else ""
 
         self.status_label.setText(f"Minerando vídeos de {mode_title} (Turbo: {fast_mode}{details_str})...")
-        self._append_log(f"--- 🚀 Mineração Iniciada [Modo: {self.combo_mode.currentText()}] ({len(targets)} alvos | Turbo: {fast_mode}{details_str}) ---")
+        self._append_log(f"--- 🚀 Mineração Iniciada [Modo: {self.combo_mode.currentText()}] ({mode_title} | Turbo: {fast_mode}{details_str}) ---")
 
         self.crawler_thread = CrawlerThread(
             keywords=targets,
@@ -1326,6 +1503,8 @@ class HunterTab(QWidget):
             include_related=include_related,
             excluded_langs=self.excluded_countries,
             loop_24h=loop_24h,
+            selected_niche=selected_niche,
+            selected_subniche=selected_subniche,
             parent=self
         )
         self.crawler_thread.live_video_analyzed.connect(self._on_live_video_analyzed)
@@ -1437,48 +1616,106 @@ class HunterTab(QWidget):
                     padding: 6px 12px;
                 }
             """)
+            self._flush_pending_ui_batch()
+            self._ui_batch_timer.stop()
+            self._trigger_autosave(force=True, include_excel=True)
 
     def _on_video_found(self, video_dict: Dict[str, Any]):
         v_id = video_dict.get("id")
-        if any(v.get("id") == v_id for v in self.all_videos):
+        if not v_id or v_id in self._seen_video_ids:
             return
-        self.all_videos.append(video_dict)
+        self._seen_video_ids.add(v_id)
+        self._pending_videos_buffer.append(video_dict)
+        self._processed_videos_counter += 1
+
+        # Preventive Auto-Hygiene routine every 250 videos
+        if self._processed_videos_counter % 250 == 0:
+            self._preventive_memory_health_check()
+
+        if not self._ui_batch_timer.isActive():
+            self._ui_batch_timer.start()
+
         if not self.is_background_mode:
-            self.all_videos.sort(key=lambda x: x.get("metrics", {}).get("view_count", 0), reverse=True)
-            self.video_table.set_videos(self.all_videos)
-            self._update_stat_cards()
             self.live_video_stream.emit(video_dict.get("url", ""), video_dict.get("title", ""), video_dict)
         self._append_log(f"📹 Vídeo minerado: {video_dict['title'][:45]}... ({video_dict['metrics']['view_count_formatted']} views)")
-        if len(self.all_videos) % 5 == 0:
-            self._trigger_autosave()
 
     def _on_domain_found(self, domain_dict: Dict[str, Any]):
-        d_root = domain_dict.get("root_domain")
-        v_id = domain_dict.get("video_id")
-        if any(d.get("root_domain") == d_root and d.get("video_id") == v_id for d in self.all_domains):
+        d_root = (domain_dict.get("root_domain") or domain_dict.get("display_name") or "").strip().lower()
+        v_id = domain_dict.get("video_id", "")
+        if not d_root:
             return
-        self.all_domains.append(domain_dict)
-        if domain_dict.get("status") == "Disponível" and not domain_dict.get("is_instagram"):
-            self.seo_table.add_domain(domain_dict)
-        if not self.is_background_mode:
-            self.domain_table.set_domains(self.all_domains)
-            self._update_stat_cards()
+        key = (d_root, v_id)
+        if key in self._seen_domain_keys:
+            return
+        self._seen_domain_keys.add(key)
+        self._pending_domains_buffer.append(domain_dict)
+
         badge = domain_dict.get("badge_icon", "")
         status = domain_dict.get("status", "")
         name = domain_dict.get("display_name") or domain_dict.get("root_domain", "")
         self._append_log(f"  {badge} {name} -> {status} ({domain_dict.get('source_location')})")
-        self._trigger_autosave()
 
-        # Alimentar aba de Análise SEO automaticamente com domínios disponíveis
-        if status == "Disponível":
-            self.seo_tab.add_domain(domain_dict)
+        if not self._ui_batch_timer.isActive():
+            self._ui_batch_timer.start()
 
-    def _trigger_autosave(self):
-        """Perform automatic atomic session save to disk and emergency backup in Downloads."""
+    def _flush_pending_ui_batch(self):
+        """High-performance batch flusher: updates tables and stats in batches to prevent UI freeze."""
+        has_new_videos = bool(self._pending_videos_buffer)
+        has_new_domains = bool(self._pending_domains_buffer)
+
+        if not has_new_videos and not has_new_domains:
+            if not self.crawler_thread or not self.crawler_thread.isRunning():
+                self._ui_batch_timer.stop()
+            return
+
+        if has_new_videos:
+            batch_v = self._pending_videos_buffer[:]
+            self._pending_videos_buffer.clear()
+            self.all_videos.extend(batch_v)
+
+            if not self.is_background_mode:
+                self.all_videos.sort(key=lambda x: x.get("metrics", {}).get("view_count", 0), reverse=True)
+                self.video_table.set_videos(self.all_videos)
+
+        if has_new_domains:
+            batch_d = self._pending_domains_buffer[:]
+            self._pending_domains_buffer.clear()
+            self.all_domains.extend(batch_d)
+
+            for d in batch_d:
+                if d.get("status") == "Disponível" and not d.get("is_instagram"):
+                    self.seo_table.add_domain(d)
+
+            if not self.is_background_mode:
+                self.domain_table.set_domains(self.all_domains)
+
+        if not self.is_background_mode:
+            self._update_stat_cards()
+
+        self._trigger_autosave(force=False, include_excel=False)
+        QApplication.processEvents()
+
+    def _preventive_memory_health_check(self):
+        """Preventive health routine to free unused RAM and maintain long-term stability."""
+        try:
+            collected = gc.collect()
+            if self._processed_videos_counter % 1000 == 0:
+                self._append_log(f"🧹 [Auto-Higiene Preventiva] Coleta de lixo executada ({self._processed_videos_counter:,} vídeos processados | {collected} objetos liberados).")
+        except Exception:
+            pass
+
+    def _trigger_autosave(self, force: bool = False, include_excel: bool = False):
+        """Perform automatic atomic session save to disk with preventive throttling."""
         if self.all_videos or self.all_domains:
             raw = self.input_target.text() if hasattr(self, 'input_target') else ""
             kws = [k.strip() for k in raw.split(",") if k.strip()]
-            self.autosave_manager.save_session(self.all_videos, self.all_domains, kws)
+            self.autosave_manager.save_session(
+                self.all_videos,
+                self.all_domains,
+                kws,
+                force=force,
+                include_excel=include_excel
+            )
 
     def _restore_previous_session_if_any(self):
         """Automatically restore previously mined data if an autosave session exists."""
@@ -1491,6 +1728,11 @@ class HunterTab(QWidget):
 
                 self.all_videos = vids
                 self.all_domains = doms
+                self._seen_video_ids = {v.get("id") for v in vids if v.get("id")}
+                self._seen_domain_keys = {
+                    ((d.get("root_domain") or d.get("display_name") or "").strip().lower(), d.get("video_id", ""))
+                    for d in doms if d.get("root_domain") or d.get("display_name")
+                }
                 self.video_table.set_videos(self.all_videos)
                 self.domain_table.set_domains(self.all_domains)
                 self.seo_table.set_domains(self.all_domains)
@@ -1514,7 +1756,11 @@ class HunterTab(QWidget):
         self.telemetry_timer.stop()
         self.pulse_timer.stop()
         self.progress_bar.setValue(100)
-        self._trigger_autosave()
+
+        # Flush any remaining buffer items and force final save with Excel
+        self._flush_pending_ui_batch()
+        self._ui_batch_timer.stop()
+        self._trigger_autosave(force=True, include_excel=True)
 
         elapsed = time.time() - self.start_time if self.start_time > 0 else 0
         mins, secs = divmod(int(elapsed), 60)

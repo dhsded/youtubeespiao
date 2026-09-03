@@ -161,5 +161,9 @@ class InstagramValidator:
         from core.trademark_validator import analyze_trademark_risk
         result["trademark_risk"] = analyze_trademark_risk(username)
 
+        if len(self._cache) >= 20000:
+            for old_k in list(self._cache.keys())[:2000]:
+                self._cache.pop(old_k, None)
+
         self._cache[username] = result
         return result

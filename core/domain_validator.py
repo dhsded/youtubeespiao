@@ -446,5 +446,9 @@ class DomainValidator:
             "trademark_risk": tm_risk
         }
 
+        if len(self._cache) >= 20000:
+            for old_k in list(self._cache.keys())[:2000]:
+                self._cache.pop(old_k, None)
+
         self._cache[domain] = result
         return result

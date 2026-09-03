@@ -1324,6 +1324,101 @@ class TestYoutubeEspiaoCore(unittest.TestCase):
         self.assertIn("cursodepiano.com.br", table_view.raw_seo_data)
         self.assertEqual(len(table_view.filtered_seo_data), 1)
 
+    def test_niche_catalog_and_queries(self):
+        """Test niche catalog retrieval and structured query generation."""
+        from core.niche_catalog import (
+            get_available_niches, get_subniches_for_niche,
+            generate_queries_for_subniche, get_all_subniches_flat,
+            NICHE_CATALOG
+        )
+
+        niches = get_available_niches()
+        self.assertGreaterEqual(len(niches), 10)
+        self.assertIn("💼 Marketing Digital & Afiliados", niches)
+        self.assertIn("💰 Finanças, Investimentos & Cripto", niches)
+
+        subniches = get_subniches_for_niche("💼 Marketing Digital & Afiliados")
+        self.assertGreaterEqual(len(subniches), 3)
+
+        first_sub = subniches[0]
+        queries = generate_queries_for_subniche("💼 Marketing Digital & Afiliados", first_sub)
+        self.assertGreaterEqual(len(queries), 3)
+        self.assertTrue(all(isinstance(q, str) and len(q) > 5 for q in queries))
+
+        # Query with additional keyword
+        queries_with_add = generate_queries_for_subniche(
+            "💼 Marketing Digital & Afiliados", first_sub, additional_keyword="2026"
+        )
+        self.assertTrue(all("2026" in q for q in queries_with_add))
+
+        # Flat list
+        flat = get_all_subniches_flat()
+        self.assertGreaterEqual(len(flat), 20)
+
+    def test_niche_mode_ui_and_preventive_routine(self):
+        """Test niche mode UI switching, batch timer, O(1) duplicate set, and log block cap."""
+        import time
+        from PyQt6.QtWidgets import QApplication
+        app = QApplication.instance() or QApplication(sys.argv)
+        from ui.hunter_tab import HunterTab
+
+        hunter = HunterTab()
+        hunter.all_videos.clear()
+        hunter.all_domains.clear()
+        hunter._seen_video_ids.clear()
+        hunter._seen_domain_keys.clear()
+        hunter._pending_videos_buffer.clear()
+        hunter._pending_domains_buffer.clear()
+
+        # 1. Log block count cap to prevent Qt layout freezing
+        self.assertEqual(hunter.log_view.maximumBlockCount(), 2000)
+
+        # 2. Batching buffer & O(1) sets initialized
+        self.assertEqual(len(hunter._seen_video_ids), 0)
+        self.assertEqual(len(hunter._seen_domain_keys), 0)
+        self.assertIsNotNone(hunter._ui_batch_timer)
+        self.assertEqual(hunter._ui_batch_timer.interval(), 250)
+
+        # 3. Test niche mode in combo_mode
+        niches_idx = hunter.combo_mode.findData("niches")
+        self.assertGreaterEqual(niches_idx, 0)
+
+        # Switch to niches mode
+        hunter.combo_mode.setCurrentIndex(niches_idx)
+        self.assertFalse(hunter.combo_niche.isHidden())
+        self.assertFalse(hunter.combo_subniche.isHidden())
+        self.assertTrue(hunter.input_target.isHidden())
+
+        # Test sub-niche population
+        hunter.combo_niche.setCurrentIndex(1)
+        self.assertGreater(hunter.combo_subniche.count(), 1)
+
+        # 4. Test O(1) video duplicate check & batching
+        sample_v = {
+            "id": "vid_test_123",
+            "url": "https://youtube.com/watch?v=vid_test_123",
+            "title": "Vídeo de Teste de Mineração",
+            "metrics": {"view_count": 1000, "view_count_formatted": "1K"}
+        }
+        hunter._on_video_found(sample_v)
+        self.assertIn("vid_test_123", hunter._seen_video_ids)
+        self.assertEqual(len(hunter._pending_videos_buffer), 1)
+
+        # Duplicate should be rejected instantly
+        hunter._on_video_found(sample_v)
+        self.assertEqual(len(hunter._pending_videos_buffer), 1)
+
+        # Flush batch
+        hunter._flush_pending_ui_batch()
+        self.assertEqual(len(hunter._pending_videos_buffer), 0)
+        self.assertEqual(len(hunter.all_videos), 1)
+
+        # 5. Test AutoSave throttling
+        hunter.autosave_manager._last_save_time = time.time()
+        # Non-forced save should be throttled
+        saved = hunter.autosave_manager.save_session(hunter.all_videos, hunter.all_domains, force=False)
+        self.assertFalse(saved)
+
 if __name__ == "__main__":
     unittest.main()
 

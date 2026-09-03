@@ -376,6 +376,10 @@ class DomainExtractor:
                 logger.debug(f"Redirect step error for {current_url}: {e}")
                 break
 
+        if len(self._unshortened_cache) >= 20000:
+            for old_k in list(self._unshortened_cache.keys())[:2000]:
+                self._unshortened_cache.pop(old_k, None)
+
         self._unshortened_cache[url] = current_url
         return current_url
 
