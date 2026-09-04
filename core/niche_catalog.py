@@ -393,6 +393,249 @@ NICHE_CATALOG: Dict[str, Dict[str, Any]] = {
                 "embalagens e conservacao de marmitas fit"
             ]
         }
+    },
+    "🎮 Jogos, Games & eSports": {
+        "icon": "🎮",
+        "description": "Tutoriais, gameplays, dicas de desempenho, mods e cenários competitivos.",
+        "subniches": {
+            "🏎️ GTA V & Roleplay (FiveM)": [
+                "como jogar gta rp iniciante servidor fivem",
+                "gta 5 mods graficos realistas como instalar",
+                "melhores formas de ganhar dinheiro no gta online",
+                "como entrar na policia gta rp regras",
+                "gta v misterios e segredos bizarros"
+            ],
+            "⛏️ Minecraft (Survival, Farms & Redstone)": [
+                "minecraft survival serie do zero guia",
+                "como fazer farm de ferro automatica minecraft",
+                "melhores shaders realistas para minecraft leve",
+                "sistema de redstone para iniciantes passo a passo",
+                "como criar servidor de minecraft gratis com amigos"
+            ],
+            "🧱 Roblox & Jogos Comunitários": [
+                "blox fruits como pegar todas as frutas raras",
+                "codigos promocionais ativos roblox",
+                "brookhaven segredos e passagens secretas",
+                "como ganhar robux de forma segura e oficial",
+                "dicas de pvp e combos no blox fruits"
+            ],
+            "🔫 Free Fire & Mobile Battle Royale": [
+                "melhor sensibilidade free fire para subir capa",
+                "dicas para pegar mestre no free fire solo",
+                "melhores armas do meta free fire atualizadas",
+                "configuracoes hud personalizado 3 dedos ff",
+                "como rodar free fire liso em celular fraco"
+            ],
+            "🎯 FPS Tático & Competitivo (Valorant / CS2 / CoD)": [
+                "como melhorar a mira e reflexo no valorant",
+                "melhores pixels e smokes essenciais cs2",
+                "guia de agentes iniciante valorant posicionamento",
+                "configuracoes de som e passos call of duty warzone",
+                "como subir de rank no counter strike 2 solo"
+            ],
+            "⚔️ MOBAs & Estratégia (League of Legends)": [
+                "como jogar league of legends do zero tutorial",
+                "melhores campeoes para subir de elo na soloq",
+                "guia da selva rotas de gank lol",
+                "como farmar melhor e controlar ondas de minions",
+                "dicas de macro game e visao no mapa"
+            ],
+            "⚽ Futebol Virtual (EA Sports FC / eFootball)": [
+                "ea fc taticas personalizadas e instrucoes meta",
+                "como marcar no ea sports fc sem levar gol",
+                "melhores dribles faceis e efetivos ea fc",
+                "jogadores custo beneficio para montar time ultimate team",
+                "como defender escanteio e faltas no fifa"
+            ],
+            "🕹️ Emuladores, Otimização de PC & Retrô": [
+                "melhor emulador de ps2 para pc configuracao completa",
+                "como otimizar o windows 11 para jogos tirar lag",
+                "como montar pc gamer barato para rodar tudo",
+                "emulador de nintendo switch no pc guia 60 fps",
+                "melhores jogos antigos que ainda valem a pena"
+            ],
+            "📱 Jogos para Celular (Android & iOS)": [
+                "melhores jogos offline para celular que nao precisam de internet",
+                "jogos mobile com graficos de console para android",
+                "como jogar jogos de pc no celular emulacao",
+                "melhores jogos leves para celular fraco"
+            ]
+        }
+    },
+    "🎭 Diversão, Entretenimento & Humor": {
+        "icon": "🎭",
+        "description": "Pegadinhas, curiosidades mundiais, podcasts, mistérios, desafios e humor.",
+        "subniches": {
+            "💡 Curiosidades & Fatos Desconhecidos": [
+                "fatos incriveis que voce nao sabia sobre o mundo",
+                "curiosidades historicas e cientificas bizarras",
+                "coisas mais raras e estranhas ja encontradas na terra",
+                "o que aconteceria se a terra parasse de girar",
+                "misterios do oceano profundo e criaturas desconhecidas"
+            ],
+            "🎙️ Podcasts, Cortes & Revelações": [
+                "melhores cortes de podcast reflexoes profundas",
+                "entrevistas reveladoras historias de vida incriveis",
+                "casos reais contados em podcasts que chocaram",
+                "conselhos de vida e superacao cortes virais"
+            ],
+            "👻 Mistérios, Casos Reais & Terror": [
+                "casos criminais reais sem solucao investigacao",
+                "relatos reais assustadores que aconteceram de verdade",
+                "lendas urbanas mais famosas e suas origens reais",
+                "lugares mais assustadores e proibidos do planeta",
+                "misterios inexplicaveis que a ciencia nao conseguiu responder"
+            ],
+            "🎪 Desafios, Pegadinhas & Vlogs Virais": [
+                "pegadinhas engracadas na rua melhores reacoes",
+                "desafio das 24 horas sobrevivendo em lugar inusitado",
+                "experimentos sociais que mostram a natureza humana",
+                "pegadinhas de camera escondida inteligentes"
+            ],
+            "🤣 Stand-up Comedy & Esquetes Cômicos": [
+                "melhores piadas de stand up comedy dublado",
+                "esquetes de comedia situacoes cotidianas engracadas",
+                "imitacoes perfeitas e parodias mais engracadas",
+                "humor inteligente e historias engracadas"
+            ],
+            "🪄 Mágicas, Ilusionismo & Segredos": [
+                "magicas faceis reveladas para impressionar amigos",
+                "como fazer truques com baralho para iniciantes",
+                "o segredo dos maiores ilusionistas do mundo revelado",
+                "truques de levitacao e telepatia explicados"
+            ],
+            "📺 Celebridades, Fofocas & Reality Shows": [
+                "noticias dos famosos e celebridades bastidores",
+                "o que aconteceu com atores famosos que sumiram",
+                "resumo e fofocas dos reality shows mais assistidos",
+                "escandalos e curiosidades das celebridades mundiais"
+            ]
+        }
+    },
+    "🎬 Filmes, Séries & Cinema": {
+        "icon": "🎬",
+        "description": "Recaps, resumos de filmes, teorias de séries, cultura geek e cinema.",
+        "subniches": {
+            "🍿 Resumos de Filmes & Recaps Explicados": [
+                "resumo de filme explicado completo em minutos",
+                "final explicado de filmes de suspense e reviravolta",
+                "filmes desconhecidos que vao explodir sua mente",
+                "filmes de ficcao cientifica que preveem o futuro",
+                "analise do filme com final surpreendente"
+            ],
+            "📺 Análises de Séries & Teorias": [
+                "teorias para a proxima temporada de series famosas",
+                "analise profunda e significado oculto dos episodios",
+                "melhores series de suspense e drama para maratonar",
+                "series canceladas que mereciam continuacao"
+            ],
+            "🦸 Universos Geek & Heróis (Marvel / DC / Star Wars)": [
+                "curiosidades e segredos dos filmes da marvel vingadores",
+                "linha do tempo completa explicada universo cinematografico",
+                "detalhes escondidos nos filmes do batman e homem aranha",
+                "todas as versoes dos viloes mais poderosos dos quadrinhos",
+                "teorias do multiverso e guerras secretas"
+            ],
+            "🎌 Animes, Mangás & Animações": [
+                "melhores animes para quem quer comecar a assistir",
+                "analise das lutas mais epicas dos animes",
+                "animes com protagonistas inteligentes e estrategistas",
+                "explicacao do final e poderes mais apelões dos animes",
+                "teorias de one piece e jujutsu kaisen"
+            ],
+            "🎥 Bastidores, Erros de Gravação & Efeitos": [
+                "erros de continuacao bizarros em filmes famosos",
+                "cenas de filmes famosas que foram totalmente improvisadas",
+                "como foram gravados efeitos especiais sem cgi",
+                "atores que quase perderam a vida gravando filmes",
+                "curiosidades incriveis de bastidores do cinema"
+            ],
+            "🎞️ Críticas de Cinema & Recomendações": [
+                "vale a pena assistir critica completa sem spoiler",
+                "melhores filmes lancados nos cinemas este ano",
+                "filmes perturbadores e psicologicos recomendados",
+                "classicos do cinema que todo mundo deveria assistir"
+            ]
+        }
+    },
+    "🎵 Música, Áudio & Instrumentos": {
+        "icon": "🎵",
+        "description": "Aulas de música, instrumentos, produção de áudio, beats e técnicas vocais.",
+        "subniches": {
+            "🎸 Violão & Guitarra": [
+                "como tocar violao do zero iniciante primeiros acordes",
+                "musicas faceis no violao para tocar hoje",
+                "exercicios de dedilhado e ritmo no violao",
+                "tecnica de solo e escalas na guitarra para iniciantes",
+                "como afinar violao de ouvido e no afinador"
+            ],
+            "🎹 Teclado & Piano": [
+                "como tocar teclado do zero aula 1",
+                "como ler partitura facil para teclado e piano",
+                "exercicios de independencia das maos no piano",
+                "acordes mais bonitos no teclado para enriquecer a musica"
+            ],
+            "🎤 Canto & Técnica Vocal": [
+                "como cantar afinado e sem desafinar exercicios",
+                "como alcancar notas agudas sem forcar a garganta",
+                "respiracao diafragmatica para cantores iniciantes",
+                "como encontrar sua extensao vocal e tom certo"
+            ],
+            "🎚️ Produção Musical, Beats & Home Studio": [
+                "como fazer beat de trap no fl studio do zero",
+                "tutorial de mixagem e masterizacao para iniciantes",
+                "como montar um home studio gastando pouco",
+                "melhores plugins vst gratuitos para producao musical"
+            ]
+        }
+    },
+    "✈️ Viagens, Turismo & Imigração": {
+        "icon": "✈️",
+        "description": "Passagens aéreas, roteiros pelo Brasil e exterior, vistos e nomadismo digital.",
+        "subniches": {
+            "🎫 Passagens Aéreas & Milhas de Viagem": [
+                "como comprar passagens aereas baratas na internet",
+                "alerta de passagens promocionais truques secretos",
+                "como viajar quase de graca acumulando milhas",
+                "erros comuns ao comprar passagem de aviao"
+            ],
+            "🗺️ Roteiros de Viagem & Dicas de Destinos": [
+                "o que fazer em 3 dias roteiro completo e gastos",
+                "melhores praias do brasil para viajar gastando pouco",
+                "guia completo de viagem internacional primeira vez",
+                "quanto custa viajar para a europa 15 dias"
+            ],
+            "🛂 Vistos, Cidadania & Morar no Exterior": [
+                "como tirar o visto americano passo a passo aprovado",
+                "como conseguir cidadania italiana ou portuguesa sozinho",
+                "melhores paises para morar e trabalhar fora do brasil",
+                "nômade digital como trabalhar viajando o mundo"
+            ]
+        }
+    },
+    "🎨 Design, Fotografia & Edição Visual": {
+        "icon": "🎨",
+        "description": "Photoshop, Canva, edição de vídeo no CapCut/Premiere e fotografia.",
+        "subniches": {
+            "🖼️ Design Gráfico & Photoshop": [
+                "curso de photoshop iniciante do zero ferramentas",
+                "como fazer flyer profissional para eventos no photoshop",
+                "efeito de recorte perfeito e manipulacao de imagem",
+                "como criar artes no canva profissionalmente"
+            ],
+            "✂️ Edição de Vídeo (CapCut / Premiere / DaVinci)": [
+                "como editar videos para o youtube no premiere",
+                "tutorial davinci resolve para iniciantes do zero",
+                "efeitos de zoom e transicoes dinamicas capcut pc",
+                "como sincronizar audio e video na edicao"
+            ],
+            "📸 Fotografia Profissional & Mobile": [
+                "como tirar fotos profissionais com o celular",
+                "regras de iluminacao e enquadramento na fotografia",
+                "como editar fotos no lightroom celular preset gratis",
+                "melhores configuracoes de camera para gravar video"
+            ]
+        }
     }
 }
 
