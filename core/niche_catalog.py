@@ -4,6 +4,7 @@ Contém 15+ grandes nichos e mais de 80 subnichos de alta relevância comercial,
 gerando buscas otimizadas para identificar vídeos com links na descrição e comentários fixados.
 """
 
+import re
 from typing import Dict, List, Any, Optional
 
 NICHE_CATALOG: Dict[str, Dict[str, Any]] = {
@@ -652,15 +653,117 @@ def get_subniches_for_niche(niche_name: str) -> List[str]:
     return []
 
 
-def generate_queries_for_subniche(
+def extract_core_seeds_for_subniche(subniche_name: str, base_queries: List[str]) -> List[str]:
+    """
+    Extrai termos-raiz (seeds) curtos e de altíssimo volume de busca a partir do
+    nome do subnicho e das consultas curadas base.
+    Ex: '🏎️ GTA V & Roleplay (FiveM)' -> ['gta rp', 'fivem', 'gta roleplay', 'gta 5', 'gta online']
+    """
+    seeds: List[str] = []
+    seen = set()
+
+    def _add_seed(s: str):
+        clean = " ".join(s.strip().lower().split())
+        if clean and len(clean) >= 2 and clean not in seen:
+            seen.add(clean)
+            seeds.append(clean)
+
+    # 1. Palavras-chave do título do subnicho (sem emojis e ruídos)
+    clean_title = re.sub(r"[^\w\s]", " ", subniche_name).strip()
+    words = [w.lower() for w in clean_title.split() if len(w) >= 2]
+    noise = {"de", "do", "da", "em", "para", "com", "os", "as", "e", "ou", "online", "pro", "passo"}
+    clean_words = [w for w in words if w not in noise]
+
+    if len(clean_words) >= 2:
+        _add_seed(" ".join(clean_words[:2]))
+        if len(clean_words) >= 3:
+            _add_seed(" ".join(clean_words[:3]))
+    elif clean_words:
+        _add_seed(clean_words[0])
+
+    # 2. Extração inteligente de termos de 2 a 3 palavras das consultas curadas
+    for q in base_queries:
+        q_clean = re.sub(
+            r"^(como|como fazer|como jogar|como vender|curso|guia|melhores|melhor|dicas|tutorial|passo a passo|estrategia|canal)\s+",
+            "", q.lower().strip()
+        )
+        parts = [p for p in q_clean.split() if p not in noise and len(p) >= 2]
+        if len(parts) >= 2:
+            _add_seed(" ".join(parts[:2]))
+        elif len(parts) == 1:
+            _add_seed(parts[0])
+
+    return seeds[:8]
+
+
+def get_subniche_query_stream(
     niche_name: str,
     subniche_name: str,
     additional_keyword: Optional[str] = None
 ) -> List[str]:
     """
-    Gera as consultas de busca estruturadas para um subnicho específico.
-    Se fornecida uma palavra adicional (opcional), combina aos termos base.
+    Gera uma esteira profunda, contínua e rica de dezenas de consultas de busca para um subnicho.
+    Evita que a mineração se encerre prematuramente em poucos vídeos, combinando:
+    1. Consultas curadas de alta intenção comercial base.
+    2. Termos-raiz (seeds) que retornam milhares de vídeos no YouTube.
+    3. Combinações semânticas de alta demanda (tutoriais, dicas, passo a passo, anos atualizados).
     """
+    queries: List[str] = []
+    seen = set()
+
+    def _add(q: str):
+        clean = " ".join(q.strip().lower().split())
+        if clean and clean not in seen:
+            seen.add(clean)
+            queries.append(clean)
+
+    # 1. Base curated queries
+    base_queries = generate_queries_for_subniche(niche_name, subniche_name, deep_expansion=False)
+    for bq in base_queries:
+        if additional_keyword and additional_keyword.strip():
+            _add(f"{bq} {additional_keyword.strip().lower()}")
+        else:
+            _add(bq)
+
+    # 2. Core Seed terms
+    seeds = extract_core_seeds_for_subniche(subniche_name, base_queries)
+    for s in seeds:
+        if additional_keyword and additional_keyword.strip():
+            _add(f"{s} {additional_keyword.strip().lower()}")
+        else:
+            _add(s)
+
+    # 3. High-intent semantic variations for deep volume
+    INTENTS = [
+        "como fazer", "tutorial", "dicas", "do zero", "passo a passo",
+        "iniciante", "melhores", "guia", "gratis", "estrategia",
+        "atualizado", "2026", "2025", "segredos", "curso"
+    ]
+
+    for s in seeds:
+        for intent in INTENTS:
+            combo = f"{s} {intent}"
+            if additional_keyword and additional_keyword.strip():
+                combo = f"{combo} {additional_keyword.strip().lower()}"
+            _add(combo)
+
+    return queries
+
+
+def generate_queries_for_subniche(
+    niche_name: str,
+    subniche_name: str,
+    additional_keyword: Optional[str] = None,
+    deep_expansion: bool = False
+) -> List[str]:
+    """
+    Gera as consultas de busca estruturadas para um subnicho específico.
+    Se deep_expansion=True, gera esteira rica de 50+ consultas para mineração volumosa.
+    Se fornecida uma palavra adicional (opcional), combina aos termos.
+    """
+    if deep_expansion:
+        return get_subniche_query_stream(niche_name, subniche_name, additional_keyword)
+
     queries = []
     if niche_name in NICHE_CATALOG:
         sub_dict = NICHE_CATALOG[niche_name]["subniches"]
@@ -675,14 +778,18 @@ def generate_queries_for_subniche(
     return queries
 
 
-def get_all_subniches_flat() -> List[Dict[str, Any]]:
+def get_all_subniches_flat(deep_expansion: bool = False) -> List[Dict[str, Any]]:
     """Retorna todos os nichos e subnichos em uma lista plana para varredura global."""
     flat_list = []
     for n_name, n_data in NICHE_CATALOG.items():
-        for s_name, q_list in n_data["subniches"].items():
+        for s_name in n_data["subniches"].keys():
+            if deep_expansion:
+                qs = get_subniche_query_stream(n_name, s_name)
+            else:
+                qs = list(n_data["subniches"][s_name])
             flat_list.append({
                 "niche": n_name,
                 "subniche": s_name,
-                "queries": list(q_list)
+                "queries": qs
             })
     return flat_list

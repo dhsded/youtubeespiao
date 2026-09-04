@@ -39,7 +39,7 @@ from core.profile_manager import (
 )
 from core.niche_catalog import (
     NICHE_CATALOG, get_available_niches, get_subniches_for_niche,
-    generate_queries_for_subniche, get_all_subniches_flat
+    generate_queries_for_subniche, get_all_subniches_flat, get_subniche_query_stream
 )
 from ui.video_table_model import VideoTableView, DomainTableView
 from ui.seo_table_view import SeoAuthorityTableView
@@ -362,53 +362,65 @@ class CrawlerThread(QThread):
                             time.sleep(1.0 if self.fast_mode else 2.5)
 
                 elif self.search_mode == "niches":
-                    # Nichos & Subnichos Mode: Structured hierarchical sweep
+                    # Nichos & Subnichos Mode: Continuous deep streaming sweep
                     niche_tasks = []
                     if not self.selected_niche or self.selected_niche == "all":
-                        niche_tasks = get_all_subniches_flat()
+                        niche_tasks = get_all_subniches_flat(deep_expansion=True)
                     else:
                         subniches = get_subniches_for_niche(self.selected_niche)
                         if not self.selected_subniche or self.selected_subniche == "all":
                             for s in subniches:
-                                qs = generate_queries_for_subniche(self.selected_niche, s)
+                                qs = get_subniche_query_stream(self.selected_niche, s)
                                 niche_tasks.append({"niche": self.selected_niche, "subniche": s, "queries": qs})
                         else:
-                            qs = generate_queries_for_subniche(self.selected_niche, self.selected_subniche)
+                            qs = get_subniche_query_stream(self.selected_niche, self.selected_subniche)
                             niche_tasks.append({"niche": self.selected_niche, "subniche": self.selected_subniche, "queries": qs})
 
+                    target_total = self.max_videos
                     total_tasks = len(niche_tasks)
+
                     for task_idx, task_info in enumerate(niche_tasks):
-                        if self._is_interrupted:
+                        if self._is_interrupted or (target_total < 10000000 and total_vids_count >= target_total):
                             break
                         n_name = task_info["niche"]
                         s_name = task_info["subniche"]
                         queries = task_info["queries"]
 
-                        self.active_keyword_changed.emit(
-                            s_name,
-                            f"{n_name} ({task_idx + 1}/{total_tasks})",
-                            task_idx + 1,
-                            total_tasks
-                        )
-
                         for q_idx, q in enumerate(queries):
-                            if self._is_interrupted:
+                            if self._is_interrupted or (target_total < 10000000 and total_vids_count >= target_total):
                                 break
                             self._wait_if_paused()
 
+                            remaining_needed = target_total - total_vids_count if target_total < 10000000 else 100
+                            per_query_limit = max(15, min(remaining_needed, 100 if target_total > 100 else target_total))
+
+                            total_display = f"{target_total:,}" if target_total < 10000000 else "Ilimitado"
+                            self.active_keyword_changed.emit(
+                                f"{s_name} - '{q}'",
+                                f"{n_name} ({task_idx + 1}/{total_tasks})",
+                                total_vids_count + 1,
+                                total_display
+                            )
+
                             self.progress_updated.emit(
-                                0, self.max_videos,
-                                f"[Ciclo {cycle}] {n_name} → {s_name} ('{q}')..."
+                                total_vids_count, target_total,
+                                f"[Vídeos: {total_vids_count}/{total_display}] {s_name} → '{q}'..."
                             )
 
                             def on_prog_wrapped_niche(cur, tot, msg):
                                 self._wait_if_paused()
-                                self.progress_updated.emit(cur, tot, f"[Ciclo {cycle}] {msg}")
+                                if "🏁 Varredura concluída" in msg or "ℹ️ Nenhum vídeo" in msg:
+                                    return
+                                current_cumulative = total_vids_count + cur
+                                self.progress_updated.emit(
+                                    current_cumulative, target_total,
+                                    f"[Ciclo {cycle}] {msg}"
+                                )
 
                             results = self.crawler.process_keyword(
                                 keyword=q,
                                 target_lang=self.selected_lang,
-                                max_videos=self.max_videos,
+                                max_videos=per_query_limit,
                                 min_views=self.min_views,
                                 sort_by=self.sort_by,
                                 date_filter=self.date_filter,
@@ -424,7 +436,8 @@ class CrawlerThread(QThread):
                                 on_progress=on_prog_wrapped_niche
                             )
 
-                            total_vids_count += results.get("total_videos", 0)
+                            vids_found = results.get("total_videos", 0)
+                            total_vids_count += vids_found
                             total_doms_count += results.get("total_domains", 0)
                             total_avail_count += results.get("available_domains", 0)
 
@@ -1748,8 +1761,10 @@ class HunterTab(QWidget):
             percent = min(100, int((current / total) * 100))
             self.progress_bar.setValue(percent)
         self.status_label.setText(message)
-        if any(token in message for token in ["ℹ️", "🏁", "Nenhum vídeo", "concluída", "finalizado"]):
-            self.lbl_active_keyword.setText(message)
+        # Only overwrite the active target HUD banner if the crawl is not actively scanning
+        if not (self.crawler_thread and self.crawler_thread.isRunning()):
+            if any(token in message for token in ["ℹ️", "🏁", "Nenhum vídeo", "concluída", "finalizado"]):
+                self.lbl_active_keyword.setText(message)
 
     def _on_finished_crawl(self, summary: Dict[str, Any]):
         self.btn_start.setEnabled(True)

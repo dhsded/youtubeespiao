@@ -1358,6 +1358,15 @@ class TestYoutubeEspiaoCore(unittest.TestCase):
         flat = get_all_subniches_flat()
         self.assertGreaterEqual(len(flat), 20)
 
+        # Query Stream and Core Seed Extraction
+        from core.niche_catalog import get_subniche_query_stream, extract_core_seeds_for_subniche
+        seeds = extract_core_seeds_for_subniche(first_sub, queries)
+        self.assertGreaterEqual(len(seeds), 1)
+
+        stream = get_subniche_query_stream("💼 Marketing Digital & Afiliados", first_sub)
+        self.assertGreaterEqual(len(stream), 15)
+        self.assertTrue(all(isinstance(q, str) and len(q) >= 2 for q in stream))
+
     def test_niche_mode_ui_and_preventive_routine(self):
         """Test niche mode UI switching, batch timer, O(1) duplicate set, and log block cap."""
         import time
